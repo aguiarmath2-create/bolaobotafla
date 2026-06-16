@@ -4,8 +4,8 @@
 //   football-data.org  — status + placar final (FINISHED). Chave configurada na Vercel.
 //   ESPN (sem auth)    — placar ao vivo (IN_PLAY). Gratuito, sem rate limit.
 //
-// Cache CDN s-maxage=60: todos os usuarios compartilham a mesma resposta.
-// A football-data.org e chamada no maximo 1x/min independente de quantos usuarios estao no site.
+// Cache CDN s-maxage=15: todos os usuarios compartilham a mesma resposta por 15s.
+// A football-data.org e chamada no maximo 4x/min independente de quantos usuarios estao no site.
 //
 // Quando FINISHED: grava no Supabase (await) para o trigger trg_compute_match_points disparar.
 
@@ -16,11 +16,6 @@ const FD_KEY      = process.env.FOOTBALL_DATA_API_KEY;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const ACTIVE_STATUSES = new Set(['IN_PLAY', 'PAUSED', 'FINISHED']);
-
-const ESPN_LIVE_STATUSES = new Set([
-  'STATUS_IN_PROGRESS', 'STATUS_FIRST_HALF', 'STATUS_SECOND_HALF',
-  'STATUS_OVERTIME', 'STATUS_HALFTIME', 'STATUS_END_PERIOD',
-]);
 
 // Resolve placar final do football-data.org (so disponivel em FINISHED no plano gratuito).
 function resolveScore(m) {
@@ -57,20 +52,24 @@ async function fetchEspnLiveMap() {
       if (seen.has(ev.id)) continue;
       seen.add(ev.id);
 
-      if (!ESPN_LIVE_STATUSES.has(ev.status?.type?.name)) continue;
-
       const comp = ev.competitions?.[0];
       const home = comp?.competitors?.find(c => c.homeAway === 'home');
       const away = comp?.competitors?.find(c => c.homeAway === 'away');
       if (!home || !away) continue;
+
+      // Inclui qualquer evento com placar numerico disponivel (ignora status ESPN).
+      // O status football-data.org e quem determina se a partida esta ativa.
+      const homeScore = parseInt(home.score);
+      const awayScore = parseInt(away.score);
+      if (isNaN(homeScore) || isNaN(awayScore)) continue;
 
       const clock  = ev.status?.displayClock || '';
       const minute = parseInt(clock.split(':')[0]) || null;
       const ts     = new Date(ev.date).getTime();
 
       map[ts] = {
-        homeScore: parseInt(home.score) ?? 0,
-        awayScore: parseInt(away.score) ?? 0,
+        homeScore,
+        awayScore,
         minute,
         period: ev.status?.period ?? null,
       };
@@ -84,8 +83,7 @@ async function fetchEspnLiveMap() {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  // CDN cache 60 s: max 1 chamada/min ao football-data.org por todos os usuarios
-  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=30');
+  res.setHeader('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=5');
 
   if (!FD_KEY) {
     return res.status(500).json({ error: 'FOOTBALL_DATA_API_KEY nao configurado na Vercel' });
@@ -149,6 +147,7 @@ export default async function handler(req, res) {
       }
 
       result.push({
+        id:        m.id,
         utcDate:   m.utcDate,
         status:    mappedStatus,
         minute:    espnData?.minute ?? m.minute ?? null,
@@ -162,7 +161,7 @@ export default async function handler(req, res) {
       // FINISHED: aguarda gravacao no Supabase antes de responder ao cliente.
       // Garante que loadData() depois desta resposta ja vera o status atualizado.
       if (m.status === 'FINISHED' && fdScore && SERVICE_KEY) {
-        await supabasePatch(m.utcDate, fdScore.home, fdScore.away).catch(e =>
+        await supabasePatch(m, fdScore.home, fdScore.away).catch(e =>
           console.error('[live] supabase patch falhou:', e.message)
         );
       }
@@ -183,31 +182,61 @@ export default async function handler(req, res) {
 
 // Atualiza match no Supabase: tenta timestamp exato e fallback ±30 min.
 // O ±30 min cobre diferencas de formato entre import_copa_matches e football-data.org.
-async function supabasePatch(utcDate, homeScore, awayScore) {
+async function supabasePatch(fdMatch, homeScore, awayScore) {
   const body = JSON.stringify({ status: 'FINISHED', home_score: homeScore, away_score: awayScore });
   const hdr  = {
     apikey:         SERVICE_KEY,
     Authorization:  `Bearer ${SERVICE_KEY}`,
     'Content-Type': 'application/json',
-    Prefer:         'return=minimal',
+    Prefer:         'return=representation',
   };
 
   // Tentativa 1: timestamp exato
   const r1 = await fetch(
-    `${SUPA_URL}?scheduled_at=eq.${encodeURIComponent(utcDate)}`,
+    `${SUPA_URL}?match_number=eq.${encodeURIComponent(fdMatch.id)}`,
     { method: 'PATCH', headers: hdr, body }
   );
-  if (!r1.ok) console.error(`[live] patch exact ${r1.status}: ${await r1.text()}`);
+  if (r1.ok) {
+    const updated = await r1.json();
+    if (updated.length > 0) {
+      console.log(`[live] supabase: match_number ${fdMatch.id} FINISHED ${homeScore}-${awayScore}`);
+      return;
+    }
+  }
+  if (!r1.ok) console.error(`[live] patch match_number ${r1.status}: ${await r1.text()}`);
 
   // Tentativa 2: range ±30 min (captura diferencas de formato de data)
-  const ts = new Date(utcDate).getTime();
+  const ts = new Date(fdMatch.utcDate).getTime();
   const lo = new Date(ts - 30 * 60000).toISOString();
   const hi = new Date(ts + 30 * 60000).toISOString();
-  const r2 = await fetch(
-    `${SUPA_URL}?scheduled_at=gte.${encodeURIComponent(lo)}&scheduled_at=lte.${encodeURIComponent(hi)}&status=neq.FINISHED`,
-    { method: 'PATCH', headers: hdr, body }
+  const candidatesRes = await fetch(
+    `${SUPA_URL}?select=id,scheduled_at,home_team:teams!matches_home_team_id_fkey(name),away_team:teams!matches_away_team_id_fkey(name)&scheduled_at=gte.${encodeURIComponent(lo)}&scheduled_at=lte.${encodeURIComponent(hi)}&status=neq.FINISHED`,
+    { headers: hdr }
   );
-  if (!r2.ok) console.error(`[live] patch range ${r2.status}: ${await r2.text()}`);
+  if (!candidatesRes.ok) {
+    console.error(`[live] fallback select ${candidatesRes.status}: ${await candidatesRes.text()}`);
+    return;
+  }
 
-  console.log(`[live] supabase: ${utcDate} FINISHED ${homeScore}-${awayScore}`);
+  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const home = norm(fdMatch.homeTeam?.name);
+  const away = norm(fdMatch.awayTeam?.name);
+  const candidates = await candidatesRes.json();
+  const found = candidates.find(c => {
+    const ch = norm(c.home_team?.name);
+    const ca = norm(c.away_team?.name);
+    return (ch.includes(home) || home.includes(ch)) && (ca.includes(away) || away.includes(ca));
+  });
+  if (!found) {
+    console.error(`[live] fallback nao encontrou match para ${fdMatch.homeTeam?.name} x ${fdMatch.awayTeam?.name} ${fdMatch.utcDate}`);
+    return;
+  }
+
+  const r2 = await fetch(`${SUPA_URL}?id=eq.${encodeURIComponent(found.id)}`, { method: 'PATCH', headers: hdr, body });
+  if (!r2.ok) {
+    console.error(`[live] patch fallback ${r2.status}: ${await r2.text()}`);
+    return;
+  }
+
+  console.log(`[live] supabase: fallback id ${found.id} FINISHED ${homeScore}-${awayScore}`);
 }

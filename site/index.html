@@ -224,7 +224,7 @@
 
           <section class="rounded-2xl border border-white/10 bg-[#151515] p-5">
             <h2 class="text-xl font-black"><i class="fa fa-trophy mr-2 text-yellow-400"></i>Ranking</h2>
-            <p class="mt-0.5 text-xs text-slate-400">Ao vivo · atualiza conforme os jogos terminam</p>
+            <p class="mt-0.5 text-xs text-slate-400">Oficial · atualiza apos o fim de cada jogo</p>
             <div id="sidebar-ranking-list" class="mt-4 space-y-1"></div>
           </section>
         </aside>
@@ -594,7 +594,7 @@ async function loadData() {
   ]);
   if (me) throw me;
   if (pe) throw pe;
-  matches = m || [];
+  matches = (m || []).map(match => ({...match, db_status: match.status, live_status: null}));
   predictions = p || [];
   allTeams = t || [];
   // Reaplica placares do live poll que o DB ainda não tem
@@ -604,6 +604,7 @@ async function loadData() {
       if (!c) return;
       if (match.home_score === null && c.home_score !== null) match.home_score = c.home_score;
       if (match.away_score === null && c.away_score !== null) match.away_score = c.away_score;
+      match.live_status = c.live_status || null;
     });
   }
   await loadRanking();
@@ -616,11 +617,11 @@ async function loadRanking() {
     const mine = predictions.filter(p => p.user_id === mbr.user_id);
     const points = mine.reduce((s, p) => {
       const match = matches.find(m => m.id === p.match_id);
-      if (match && match.home_score !== null && match.away_score !== null) {
-        // Placar em memória (ESPN) é autoritativo
+      if (match && isMatchFinishedForScoring(match) && match.home_score !== null && match.away_score !== null) {
+        // Recalcula somente depois do fim confirmado da partida.
         return s + (calcLivePoints(p, match.home_score, match.away_score) ?? 0);
       }
-      return s + (p.points_earned ?? 0);
+      return s;
     }, 0);
     return {
       user: mbr.profiles,
@@ -856,16 +857,9 @@ function requireChampionPick() {
 function getLivePeriod(scheduledAt, minute) {
   // Use real minute from API when available
   if (minute !== null && minute !== undefined) {
-    if (minute <= 45) return `${minute}'`;
-    if (minute <= 50) return 'INTERVALO';
     return `${minute}'`;
   }
-  // Fallback: estimate from elapsed time
-  const mins = (new Date() - new Date(scheduledAt)) / 60000;
-  if (mins < 0)  return null;
-  if (mins < 50) return '1º TEMPO';
-  if (mins < 65) return 'INTERVALO';
-  return '2º TEMPO';
+  return null;
 }
 
 function calcLivePoints(pred, hs, as_) {
@@ -876,20 +870,21 @@ function calcLivePoints(pred, hs, as_) {
   return pr === lr ? 1 : 0;
 }
 
+function isMatchFinishedForScoring(match) {
+  return match?.db_status === 'FINISHED';
+}
+
 function renderMatchCard(m) {
   const pred = predictions.find(p => p.match_id === m.id && p.user_id === currentUser.id);
 
-  // Fallback: infer status from time when Supabase hasn't updated yet.
   // _espnFinished persists matches the live poll confirmed as FINISHED across loadData() resets.
   const minsElapsed = (new Date() - new Date(m.scheduled_at)) / 60000;
-  const espnFinished = window._espnFinished?.has(m.id);
-  const effectiveStatus = (m.status === 'FINISHED' || espnFinished)
+  const visualStatus = m.live_status || m.status;
+  const effectiveStatus = isMatchFinishedForScoring(m)
     ? 'FINISHED'
-    : (m.status === 'LIVE' || (minsElapsed >= 0 && minsElapsed < 135))
+    : (visualStatus === 'LIVE' || visualStatus === 'FINISHED' || (minsElapsed >= 0 && minsElapsed < 135))
       ? 'LIVE'
-      : minsElapsed >= 135
-        ? 'FINISHED'   // sem teto: partida 135+ min atrás = sempre finalizada
-        : m.status;
+      : visualStatus;
 
   const isFinished = effectiveStatus === 'FINISHED';
   const isLive     = effectiveStatus === 'LIVE';
@@ -976,22 +971,36 @@ function renderMatchCard(m) {
     let livePreview = false;
     if (isFinished) {
       if (m.home_score !== null && m.away_score !== null) {
-        // Placar em memória (ESPN) é autoritativo — sempre recalcula
+        // Placar em memória so vale para pontos apos fim confirmado.
         pts = calcLivePoints(pred, m.home_score, m.away_score) ?? 0;
         livePreview = pred.points_earned === null || pred.points_earned === undefined;
-      } else if (pred.points_earned !== null && pred.points_earned !== undefined) {
+      } else if (m.db_status === 'FINISHED' && pred.points_earned !== null && pred.points_earned !== undefined) {
         pts = pred.points_earned;
       }
-    } else if (isLive && m.home_score !== null) {
-      pts = calcLivePoints(pred, m.home_score, m.away_score) ?? 0;
-      livePreview = true;
     }
-    let bg, ptsCls, icon;
-    if (pts === 3)      { bg = 'bg-emerald-950/80 border-emerald-500/40'; ptsCls = 'bg-emerald-500/20 text-emerald-300'; icon = 'fa-check text-emerald-400'; }
-    else if (pts === 1) { bg = 'bg-yellow-950/50 border-yellow-500/30';   ptsCls = 'bg-yellow-500/20 text-yellow-300';  icon = 'fa-check text-yellow-400'; }
-    else                { bg = 'bg-black/30 border-white/5';               ptsCls = 'bg-white/5 text-slate-500';          icon = isFinished ? 'fa-xmark text-slate-600' : 'fa-futbol text-slate-600'; }
-    const prefix = isFinished ? '+' : (livePreview ? '→ ' : '');
-    const ptsLabel = `${prefix}${pts} pt${pts !== 1 ? 's' : ''}`;
+    let bg, ptsCls, icon, ptsLabel;
+    if (!isFinished) {
+      bg = 'bg-black/30 border-white/5';
+      ptsCls = 'bg-white/5 text-slate-400';
+      icon = 'fa-futbol text-slate-600';
+      ptsLabel = 'Aguardando fim';
+    } else if (pts === 3) {
+      bg = 'bg-emerald-950/80 border-emerald-500/40';
+      ptsCls = 'bg-emerald-500/20 text-emerald-300';
+      icon = 'fa-check text-emerald-400';
+      ptsLabel = `+${pts} pts`;
+    } else if (pts === 1) {
+      bg = 'bg-yellow-950/50 border-yellow-500/30';
+      ptsCls = 'bg-yellow-500/20 text-yellow-300';
+      icon = 'fa-check text-yellow-400';
+      ptsLabel = `+${pts} pt`;
+    } else {
+      bg = 'bg-black/30 border-white/5';
+      ptsCls = 'bg-white/5 text-slate-500';
+      icon = 'fa-xmark text-slate-600';
+      const prefix = livePreview ? '→ ' : '+';
+      ptsLabel = `${prefix}${pts} pts`;
+    }
     predBar = `
       <div class="mx-3 mb-3 flex items-center justify-between rounded-xl border ${bg} px-4 py-3 gap-3">
         <span class="text-sm font-black text-slate-200 min-w-0 truncate">
@@ -1071,9 +1080,12 @@ async function pollLiveScores() {
     let changed = false;
     let newlyFinished = false;
     for (const live of liveData) {
-      // Match by UTC timestamp (within 1 min tolerance), fallback to team names
+      // Prefer the official football-data id stored as match_number.
       const liveTs = new Date(live.utcDate).getTime();
-      let m = matches.find(m => Math.abs(new Date(m.scheduled_at).getTime() - liveTs) < 60000);
+      let m = matches.find(m => String(m.match_number) === String(live.id));
+      if (!m) {
+        m = matches.find(m => Math.abs(new Date(m.scheduled_at).getTime() - liveTs) < 60000);
+      }
       if (!m && live.homeTeam && live.awayTeam) {
         const hn = live.homeTeam.toLowerCase();
         const an = live.awayTeam.toLowerCase();
@@ -1087,25 +1099,27 @@ async function pollLiveScores() {
       const newStatus = live.status === 'IN_PLAY'   ? 'LIVE'
                       : live.status === 'PAUSED'    ? 'LIVE'
                       : live.status === 'FINISHED'  ? 'FINISHED'
-                      : m.status;
+                      : (m.live_status || m.status);
+      // Preserva o ultimo placar conhecido quando a ESPN retorna null transitoriamente
+      const newHomeScore = live.homeScore !== null ? live.homeScore : m.home_score;
+      const newAwayScore = live.awayScore !== null ? live.awayScore : m.away_score;
       if (
-        m.status !== newStatus ||
-        m.home_score !== live.homeScore ||
-        m.away_score !== live.awayScore ||
+        m.live_status !== newStatus ||
+        m.home_score !== newHomeScore ||
+        m.away_score !== newAwayScore ||
         m.minute !== live.minute
       ) {
-        const wasFinished = m.status === 'FINISHED';
-        m.status     = newStatus;
-        m.home_score = live.homeScore;
-        m.away_score = live.awayScore;
-        m.minute     = live.minute;
-        // Cache live scores para sobreviver a loadData() resets
+        const wasFinished = m.db_status === 'FINISHED';
+        m.live_status  = newStatus;
+        m.home_score   = newHomeScore;
+        m.away_score   = newAwayScore;
+        m.minute       = live.minute;
         window._espnCache = window._espnCache || {};
-        window._espnCache[m.id] = { home_score: live.homeScore, away_score: live.awayScore, status: newStatus };
+        window._espnCache[m.id] = { home_score: newHomeScore, away_score: newAwayScore, live_status: newStatus };
         if (newStatus === 'FINISHED') {
           window._espnFinished = window._espnFinished || new Set();
           window._espnFinished.add(m.id);
-          if (!wasFinished && live.homeScore !== null && live.awayScore !== null) {
+          if (!wasFinished && newHomeScore !== null && newAwayScore !== null) {
             newlyFinished = true;
           }
         }
@@ -1126,8 +1140,8 @@ async function pollLiveScores() {
 function isMatchWindowActive() {
   const now = new Date();
   return matches.some(m => {
-    if (m.status === 'LIVE') return true;
-    if (m.status === 'FINISHED') return false; // já está no DB, não precisa mais verificar
+    if (m.live_status === 'LIVE') return true;
+    if (m.db_status === 'FINISHED') return false; // ja esta no DB, nao precisa mais verificar
     const diff = (new Date(m.scheduled_at) - now) / 60000;
     return diff > -400 && diff < 30; // 30 min antes até 400 min (~6.5h) após o início
   });
@@ -1144,7 +1158,7 @@ function startLivePoller() {
       render();
     }
   };
-  window._livePoller = setInterval(tick, 30000);
+  window._livePoller = setInterval(tick, 15000);
 }
 
 function render() {
@@ -1266,8 +1280,7 @@ function renderTable() {
     const predictedIds = new Set(matchPreds.map(p => p.user_id));
     const done = members.filter(u => predictedIds.has(u.id));
     const missing = members.filter(u => !predictedIds.has(u.id));
-    const minsElapsedT = (new Date() - new Date(m.scheduled_at)) / 60000;
-    const isFinished = m.status === 'FINISHED' || window._espnFinished?.has(m.id) || minsElapsedT >= 135;
+    const isFinished = isMatchFinishedForScoring(m);
     const isClosed = isFinished || new Date(m.prediction_closes_at || m.scheduled_at) <= new Date();
     const statusLabel = isFinished ? 'Finalizado' : isClosed ? 'Fechado' : 'Aberto';
     const statusClass = isFinished
@@ -1290,9 +1303,9 @@ function renderTable() {
     const withUsers = matchPreds
       .map(p => {
         const u = members.find(u => u.id === p.user_id);
-        const pts = mScoreKnown
+        const pts = isFinished && mScoreKnown
           ? (calcLivePoints(p, m.home_score, m.away_score) ?? 0)
-          : (p.points_earned ?? 0);
+          : 0;
         return { p, u, pts };
       })
       .filter(x => x.u)
