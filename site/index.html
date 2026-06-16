@@ -597,7 +597,7 @@ async function loadData() {
   matches = m || [];
   predictions = p || [];
   allTeams = t || [];
-  // Reaplica placares da ESPN que o DB ainda não tem
+  // Reaplica placares do live poll que o DB ainda não tem
   if (window._espnCache) {
     matches.forEach(match => {
       const c = window._espnCache[match.id];
@@ -880,15 +880,15 @@ function renderMatchCard(m) {
   const pred = predictions.find(p => p.match_id === m.id && p.user_id === currentUser.id);
 
   // Fallback: infer status from time when Supabase hasn't updated yet.
-  // _espnFinished persists matches ESPN already confirmed as FINISHED across loadData() resets.
+  // _espnFinished persists matches the live poll confirmed as FINISHED across loadData() resets.
   const minsElapsed = (new Date() - new Date(m.scheduled_at)) / 60000;
   const espnFinished = window._espnFinished?.has(m.id);
   const effectiveStatus = (m.status === 'FINISHED' || espnFinished)
     ? 'FINISHED'
     : (m.status === 'LIVE' || (minsElapsed >= 0 && minsElapsed < 135))
       ? 'LIVE'
-      : (minsElapsed >= 135 && minsElapsed < 180)
-        ? 'FINISHED'
+      : minsElapsed >= 135
+        ? 'FINISHED'   // sem teto: partida 135+ min atrás = sempre finalizada
         : m.status;
 
   const isFinished = effectiveStatus === 'FINISHED';
@@ -1098,7 +1098,7 @@ async function pollLiveScores() {
         m.home_score = live.homeScore;
         m.away_score = live.awayScore;
         m.minute     = live.minute;
-        // Cache ESPN scores para sobreviver a loadData() resets
+        // Cache live scores para sobreviver a loadData() resets
         window._espnCache = window._espnCache || {};
         window._espnCache[m.id] = { home_score: live.homeScore, away_score: live.awayScore, status: newStatus };
         if (newStatus === 'FINISHED') {
@@ -1121,10 +1121,12 @@ async function pollLiveScores() {
 }
 
 function isMatchWindowActive() {
+  const now = new Date();
   return matches.some(m => {
     if (m.status === 'LIVE') return true;
-    const diff = (new Date(m.scheduled_at) - new Date()) / 60000;
-    return diff > -180 && diff < 30; // 180 min covers 90min + extra time + delays
+    if (m.status === 'FINISHED') return false; // já está no DB, não precisa mais verificar
+    const diff = (new Date(m.scheduled_at) - now) / 60000;
+    return diff > -400 && diff < 30; // 30 min antes até 400 min (~6.5h) após o início
   });
 }
 
@@ -1139,7 +1141,8 @@ function startLivePoller() {
       render();
     }
   };
-  tick(); // dispara imediatamente ao entrar na página
+  // Primeiro poll sempre sem restrição de janela: sincroniza partidas finalizadas não gravadas no DB
+  pollLiveScores();
   window._livePoller = setInterval(tick, 30000);
 }
 
@@ -1262,7 +1265,8 @@ function renderTable() {
     const predictedIds = new Set(matchPreds.map(p => p.user_id));
     const done = members.filter(u => predictedIds.has(u.id));
     const missing = members.filter(u => !predictedIds.has(u.id));
-    const isFinished = m.status === 'FINISHED';
+    const minsElapsedT = (new Date() - new Date(m.scheduled_at)) / 60000;
+    const isFinished = m.status === 'FINISHED' || window._espnFinished?.has(m.id) || minsElapsedT >= 135;
     const isClosed = isFinished || new Date(m.prediction_closes_at || m.scheduled_at) <= new Date();
     const statusLabel = isFinished ? 'Finalizado' : isClosed ? 'Fechado' : 'Aberto';
     const statusClass = isFinished
