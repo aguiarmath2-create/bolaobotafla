@@ -1,16 +1,28 @@
-// Vercel Serverless Function — resultados da Copa do Mundo via football-data.org
-// Cache CDN (s-maxage=60): todos os usuários compartilham a mesma resposta.
-// Máximo 1 chamada/min à API, independente de quantos usuários estão no site.
-// Quando FINISHED, grava no Supabase para o trigger trg_compute_match_points disparar.
+// Vercel Serverless Function — resultados da Copa do Mundo 2026
+//
+// Fontes:
+//   football-data.org  — status + placar final (FINISHED). Chave configurada na Vercel.
+//   ESPN (sem auth)    — placar ao vivo (IN_PLAY). Gratuito, sem rate limit.
+//
+// Cache CDN s-maxage=60: todos os usuarios compartilham a mesma resposta.
+// A football-data.org e chamada no maximo 1x/min independente de quantos usuarios estao no site.
+//
+// Quando FINISHED: grava no Supabase (await) para o trigger trg_compute_match_points disparar.
 
 const FD_URL      = 'https://api.football-data.org/v4/competitions/WC/matches';
+const ESPN_BASE   = 'https://site.api.espn.com/apis/site/v2/sports/soccer/FIFA.WORLD/scoreboard';
 const SUPA_URL    = 'https://pmrbtugoyuwlgobovlzg.supabase.co/rest/v1/matches';
 const FD_KEY      = process.env.FOOTBALL_DATA_API_KEY;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const ACTIVE_STATUSES = new Set(['IN_PLAY', 'PAUSED', 'FINISHED']);
 
-// Resolve placar final. Free tier não fornece placar ao vivo (fullTime fica null durante a partida).
+const ESPN_LIVE_STATUSES = new Set([
+  'STATUS_IN_PROGRESS', 'STATUS_FIRST_HALF', 'STATUS_SECOND_HALF',
+  'STATUS_OVERTIME', 'STATUS_HALFTIME', 'STATUS_END_PERIOD',
+]);
+
+// Resolve placar final do football-data.org (so disponivel em FINISHED no plano gratuito).
 function resolveScore(m) {
   const ft = m.score?.fullTime;
   if (ft?.home !== null && ft?.home !== undefined && ft?.away !== null && ft?.away !== undefined) {
@@ -20,26 +32,71 @@ function resolveScore(m) {
   if (rt?.home !== null && rt?.home !== undefined && rt?.away !== null && rt?.away !== undefined) {
     return { home: rt.home, away: rt.away };
   }
-  const ht = m.score?.halfTime;
-  if (ht?.home !== null && ht?.home !== undefined && ht?.away !== null && ht?.away !== undefined) {
-    return { home: ht.home, away: ht.away };
-  }
   return null;
+}
+
+// Busca placares ao vivo da ESPN para varios dias (sem autenticacao).
+// Retorna mapa: timestamp_ms -> { homeScore, awayScore, minute, period }
+async function fetchEspnLiveMap() {
+  try {
+    const results = await Promise.all(
+      [-1, 0, 1].map(d => {
+        const date = new Date(Date.now() + d * 86400000);
+        const s = date.toISOString().slice(0, 10).replace(/-/g, '');
+        return fetch(`${ESPN_BASE}?dates=${s}`)
+          .then(r => r.ok ? r.json() : { events: [] })
+          .catch(() => ({ events: [] }));
+      })
+    );
+
+    const map = {};
+    const allEvents = results.flatMap(r => r.events || []);
+    const seen = new Set();
+
+    for (const ev of allEvents) {
+      if (seen.has(ev.id)) continue;
+      seen.add(ev.id);
+
+      if (!ESPN_LIVE_STATUSES.has(ev.status?.type?.name)) continue;
+
+      const comp = ev.competitions?.[0];
+      const home = comp?.competitors?.find(c => c.homeAway === 'home');
+      const away = comp?.competitors?.find(c => c.homeAway === 'away');
+      if (!home || !away) continue;
+
+      const clock  = ev.status?.displayClock || '';
+      const minute = parseInt(clock.split(':')[0]) || null;
+      const ts     = new Date(ev.date).getTime();
+
+      map[ts] = {
+        homeScore: parseInt(home.score) ?? 0,
+        awayScore: parseInt(away.score) ?? 0,
+        minute,
+        period: ev.status?.period ?? null,
+      };
+    }
+
+    return map;
+  } catch {
+    return {};
+  }
 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  // Cache CDN por 60 s: múltiplos usuários compartilham a mesma resposta → sem rate limit
+  // CDN cache 60 s: max 1 chamada/min ao football-data.org por todos os usuarios
   res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=30');
 
   if (!FD_KEY) {
-    return res.status(500).json({ error: 'FOOTBALL_DATA_API_KEY não configurado na Vercel' });
+    return res.status(500).json({ error: 'FOOTBALL_DATA_API_KEY nao configurado na Vercel' });
   }
 
   try {
-    const fdRes = await fetch(FD_URL, {
-      headers: { 'X-Auth-Token': FD_KEY },
-    });
+    // Busca FD + ESPN em paralelo
+    const [fdRes, espnLiveMap] = await Promise.all([
+      fetch(FD_URL, { headers: { 'X-Auth-Token': FD_KEY } }),
+      fetchEspnLiveMap(),
+    ]);
 
     if (!fdRes.ok) {
       const text = await fdRes.text();
@@ -49,12 +106,13 @@ export default async function handler(req, res) {
     const { matches: allMatches } = await fdRes.json();
     const active = (allMatches || []).filter(m => ACTIVE_STATUSES.has(m.status));
 
-    // Debug: ?debug=1 retorna dados brutos
+    // Debug: ?debug=1
     if (req.query?.debug === '1') {
       return res.status(200).json({
-        total: allMatches?.length ?? 0,
-        active: active.length,
-        matches: active.map(m => ({
+        fd_total:   allMatches?.length ?? 0,
+        fd_active:  active.length,
+        espn_live:  Object.keys(espnLiveMap).length,
+        fd_matches: active.map(m => ({
           id:       m.id,
           utcDate:  m.utcDate,
           status:   m.status,
@@ -63,41 +121,58 @@ export default async function handler(req, res) {
           awayTeam: m.awayTeam?.shortName,
           score:    m.score,
         })),
+        espn_matches: Object.entries(espnLiveMap).map(([ts, d]) => ({
+          utcDate: new Date(Number(ts)).toISOString(),
+          ...d,
+        })),
       });
     }
 
     const result = [];
 
     for (const m of active) {
-      const score = resolveScore(m);
+      const fdScore   = resolveScore(m);   // placar final do FD (null durante a partida)
+      const fdTs      = new Date(m.utcDate).getTime();
       const mappedStatus = m.status === 'FINISHED' ? 'FINISHED'
                          : m.status === 'PAUSED'   ? 'PAUSED'
                          : 'IN_PLAY';
 
+      // Busca placar ao vivo da ESPN para partidas em andamento
+      let espnData = null;
+      if (mappedStatus !== 'FINISHED') {
+        for (const [espnTs, data] of Object.entries(espnLiveMap)) {
+          if (Math.abs(fdTs - Number(espnTs)) < 90000) { // 90 s de tolerancia
+            espnData = data;
+            break;
+          }
+        }
+      }
+
       result.push({
         utcDate:   m.utcDate,
         status:    mappedStatus,
-        minute:    m.minute ?? null,
-        homeScore: score?.home ?? null,
-        awayScore: score?.away ?? null,
+        minute:    espnData?.minute ?? m.minute ?? null,
+        period:    espnData?.period ?? null,
+        homeScore: fdScore?.home ?? espnData?.homeScore ?? null,
+        awayScore: fdScore?.away ?? espnData?.awayScore ?? null,
         homeTeam:  m.homeTeam?.name,
         awayTeam:  m.awayTeam?.name,
       });
 
-      // Quando finalizada, aguarda a escrita no Supabase antes de retornar a resposta.
-      // Assim quando o cliente receber a resposta e chamar loadData(), o DB já está atualizado
-      // e a view predictions_safe já revela os palpites de todos os usuários.
-      if (m.status === 'FINISHED' && score && SERVICE_KEY) {
-        await supabasePatch(m.utcDate, score.home, score.away).catch(e =>
+      // FINISHED: aguarda gravacao no Supabase antes de responder ao cliente.
+      // Garante que loadData() depois desta resposta ja vera o status atualizado.
+      if (m.status === 'FINISHED' && fdScore && SERVICE_KEY) {
+        await supabasePatch(m.utcDate, fdScore.home, fdScore.away).catch(e =>
           console.error('[live] supabase patch falhou:', e.message)
         );
       }
     }
 
-    console.log(`[live/fd] ${new Date().toISOString()} — ${result.length} partidas ativas`);
-    result.forEach(r =>
-      console.log(`  ${r.homeTeam} ${r.homeScore ?? '?'}-${r.awayScore ?? '?'} ${r.awayTeam} [${r.status}${r.minute ? ' ' + r.minute + '\'' : ''}]`)
-    );
+    console.log(`[live] ${new Date().toISOString()} fd:${active.length} espn:${Object.keys(espnLiveMap).length}`);
+    result.forEach(r => {
+      const s = r.homeScore !== null ? `${r.homeScore}-${r.awayScore}` : '?-?';
+      console.log(`  ${r.homeTeam} ${s} ${r.awayTeam} [${r.status}${r.minute ? ' ' + r.minute + "'" : ''}]`);
+    });
 
     return res.status(200).json({ matches: result });
 
@@ -106,18 +181,33 @@ export default async function handler(req, res) {
   }
 }
 
+// Atualiza match no Supabase: tenta timestamp exato e fallback ±30 min.
+// O ±30 min cobre diferencas de formato entre import_copa_matches e football-data.org.
 async function supabasePatch(utcDate, homeScore, awayScore) {
-  const url = `${SUPA_URL}?scheduled_at=eq.${encodeURIComponent(utcDate)}`;
-  const r = await fetch(url, {
-    method: 'PATCH',
-    headers: {
-      apikey:         SERVICE_KEY,
-      Authorization:  `Bearer ${SERVICE_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer:         'return=minimal',
-    },
-    body: JSON.stringify({ status: 'FINISHED', home_score: homeScore, away_score: awayScore }),
-  });
-  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  const body = JSON.stringify({ status: 'FINISHED', home_score: homeScore, away_score: awayScore });
+  const hdr  = {
+    apikey:         SERVICE_KEY,
+    Authorization:  `Bearer ${SERVICE_KEY}`,
+    'Content-Type': 'application/json',
+    Prefer:         'return=minimal',
+  };
+
+  // Tentativa 1: timestamp exato
+  const r1 = await fetch(
+    `${SUPA_URL}?scheduled_at=eq.${encodeURIComponent(utcDate)}`,
+    { method: 'PATCH', headers: hdr, body }
+  );
+  if (!r1.ok) console.error(`[live] patch exact ${r1.status}: ${await r1.text()}`);
+
+  // Tentativa 2: range ±30 min (captura diferencas de formato de data)
+  const ts = new Date(utcDate).getTime();
+  const lo = new Date(ts - 30 * 60000).toISOString();
+  const hi = new Date(ts + 30 * 60000).toISOString();
+  const r2 = await fetch(
+    `${SUPA_URL}?scheduled_at=gte.${encodeURIComponent(lo)}&scheduled_at=lte.${encodeURIComponent(hi)}&status=neq.FINISHED`,
+    { method: 'PATCH', headers: hdr, body }
+  );
+  if (!r2.ok) console.error(`[live] patch range ${r2.status}: ${await r2.text()}`);
+
   console.log(`[live] supabase: ${utcDate} FINISHED ${homeScore}-${awayScore}`);
 }
