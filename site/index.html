@@ -890,9 +890,10 @@ function renderMatchCard(m) {
   const ph = pendingPreds[m.id]?.home;
   const pa = pendingPreds[m.id]?.away;
   const matchPredCount = predictions.filter(p => p.match_id === m.id).length;
-  const showScore = isLive || isFinished; // always show score area when live/finished
-  const homeScoreVal = m.home_score !== null ? m.home_score : (isLive ? '?' : null);
-  const awayScoreVal = m.away_score !== null ? m.away_score : (isLive ? '?' : null);
+  const showScore = isLive || isFinished;
+  const scoresKnown = m.home_score !== null && m.away_score !== null;
+  const homeScoreVal = scoresKnown ? m.home_score : (isLive || isFinished ? '?' : null);
+  const awayScoreVal = scoresKnown ? m.away_score : (isLive || isFinished ? '?' : null);
 
   // ── Status badge ──────────────────────────────────────
   let statusLabel, statusClass;
