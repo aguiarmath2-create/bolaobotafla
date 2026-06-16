@@ -605,10 +605,18 @@ async function loadRanking() {
   const {data: members} = await db.from('league_members').select('user_id, role, profiles(*)').eq('league_id', currentLeague.id);
   ranking = (members || []).map(mbr => {
     const mine = predictions.filter(p => p.user_id === mbr.user_id);
+    const points = mine.reduce((s, p) => {
+      if (p.points_earned !== null && p.points_earned !== undefined) return s + p.points_earned;
+      const match = matches.find(m => m.id === p.match_id);
+      if (match && match.home_score !== null && match.away_score !== null) {
+        return s + (calcLivePoints(p, match.home_score, match.away_score) ?? 0);
+      }
+      return s;
+    }, 0);
     return {
       user: mbr.profiles,
       role: mbr.role,
-      points: mine.reduce((s, p) => s + (p.points_earned || 0), 0),
+      points,
       count: mine.length
     };
   }).sort((a, b) => b.points - a.points || b.count - a.count || (a.user?.name || '').localeCompare(b.user?.name || ''));
@@ -957,7 +965,12 @@ function renderMatchCard(m) {
     let pts = 0;
     let livePreview = false;
     if (isFinished) {
-      pts = pred.points_earned ?? 0;
+      if (pred.points_earned !== null && pred.points_earned !== undefined) {
+        pts = pred.points_earned;
+      } else if (m.home_score !== null && m.away_score !== null) {
+        pts = calcLivePoints(pred, m.home_score, m.away_score) ?? 0;
+        livePreview = true;
+      }
     } else if (isLive && m.home_score !== null) {
       pts = calcLivePoints(pred, m.home_score, m.away_score) ?? 0;
       livePreview = true;
@@ -1069,14 +1082,21 @@ async function pollLiveScores() {
         m.away_score !== live.awayScore ||
         m.minute !== live.minute
       ) {
-        m.status    = newStatus;
+        const wasFinished = m.status === 'FINISHED';
+        m.status     = newStatus;
         m.home_score = live.homeScore;
         m.away_score = live.awayScore;
-        m.minute    = live.minute;
-        // Persist FINISHED across loadData() resets until Supabase catches up
+        m.minute     = live.minute;
         if (newStatus === 'FINISHED') {
           window._espnFinished = window._espnFinished || new Set();
           window._espnFinished.add(m.id);
+          // Grava no Supabase assim que detectar fim de partida com placar
+          if (!wasFinished && live.homeScore !== null && live.awayScore !== null) {
+            db.from('matches')
+              .update({ status: 'FINISHED', home_score: live.homeScore, away_score: live.awayScore })
+              .eq('id', m.id)
+              .then(({ error }) => { if (!error) loadData().then(() => render()); });
+          }
         }
         changed = true;
       }
