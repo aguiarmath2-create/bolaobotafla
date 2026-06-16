@@ -1,0 +1,1662 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Palpites Spotx - Copa do Mundo 2026</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { darkMode: 'class' }</script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .scrollbar-none::-webkit-scrollbar { display: none; }
+    .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+    /* Right panel never shows on mobile */
+    @media (max-width: 1279px) { #right-panel { display: none !important; } }
+    /* Active nav button */
+    .nav-btn.active { color: #34d399; }
+    .nav-btn.active i { color: #34d399; }
+    /* Bracket */
+    .br-round { display: flex; flex-direction: column; flex: 1; min-width: 120px; }
+    .br-label { text-align: center; font-size: 9px; font-weight: 900; text-transform: uppercase; color: #64748b; letter-spacing: .08em; padding-bottom: 6px; }
+    .br-pair { display: flex; flex-direction: column; flex: 1; position: relative; padding-right: 14px; }
+    .br-pair::after { content: ''; position: absolute; right: 0; top: 25%; height: 50%; width: 14px; border-top: 1px solid rgba(255,255,255,.1); border-right: 1px solid rgba(255,255,255,.1); border-bottom: 1px solid rgba(255,255,255,.1); }
+    .br-single { display: flex; flex-direction: column; flex: 1; }
+    .br-slot { flex: 1; margin: 3px 0; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; background: #151515; overflow: hidden; min-height: 52px; }
+    .br-team { display: flex; align-items: center; gap: 5px; padding: 5px 8px; font-size: 11px; font-weight: 700; flex: 1; min-height: 26px; }
+    .br-team:first-child { border-bottom: 1px solid rgba(255,255,255,.06); }
+    .br-team.br-win { background: rgba(52,211,153,.09); }
+    .br-score { margin-left: auto; font-weight: 900; font-size: 12px; }
+    .copa-tab { transition: background .15s, color .15s; }
+    /* Live match pulse */
+    .live-dot { animation: liveDot 1.4s ease-in-out infinite; }
+    @keyframes liveDot { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .live-ring { box-shadow: 0 0 0 1px rgba(239,68,68,.3); }
+  </style>
+</head>
+<body class="min-h-screen bg-[#080b12] text-white">
+
+<!-- LOGIN VIEW -->
+<main id="login-view" class="hidden min-h-screen px-4 py-8 items-center justify-center">
+  <section class="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl md:grid-cols-[1.1fr_0.9fr]">
+    <div class="relative min-h-[320px] bg-slate-950 md:min-h-[560px]">
+      <img src="/logo/spotx-logo.svg" alt="Palpites Spotx" class="absolute inset-0 h-full w-full bg-[#07121F] object-contain p-16">
+      <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/35 to-transparent"></div>
+      <div class="absolute bottom-0 left-0 right-0 p-6">
+        <p class="text-sm font-bold uppercase tracking-[0.24em] text-yellow-300">Copa do Mundo 2026</p>
+        <p class="mt-3 max-w-sm text-sm text-slate-200">Entre com Google, confirme a senha do grupo e acompanhe os palpites com clareza.</p>
+      </div>
+    </div>
+    <div class="flex flex-col justify-center p-6 sm:p-8">
+      <p class="text-sm font-semibold text-emerald-300">Palpites Spotx</p>
+      <h1 class="mt-2 text-3xl font-black leading-tight sm:text-4xl">Palpites Spotx<br>Copa do Mundo 2026</h1>
+      <p class="mt-4 text-sm leading-6 text-slate-400">Primeiro entre com Google. Em seguida, informe a senha do grupo para acessar os jogos, palpites e ranking.</p>
+      <button id="google-login-btn" type="button" class="mt-8 flex w-full items-center justify-center gap-3 rounded-xl bg-white px-4 py-3 text-sm font-bold text-slate-950 hover:bg-slate-100">
+        <svg class="h-5 w-5" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.57-.14-3.08-.4-4.5H24v9h12.65c-.55 2.96-2.2 5.47-4.7 7.15l7.27 5.64C43.48 37.87 46.5 31.67 46.5 24.5z"/><path fill="#FBBC05" d="M10.54 28.59A14.43 14.43 0 0 1 9.75 24c0-1.59.28-3.13.79-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.86.92 7.5 2.56 10.78l7.98-6.19z"/><path fill="#34A853" d="M24 48c6.47 0 11.9-2.13 15.86-5.81l-7.27-5.64c-2.02 1.35-4.6 2.15-8.59 2.15-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Entrar com Google
+      </button>
+      <p id="login-error" class="hidden mt-4 rounded-xl border border-red-900 bg-red-950/50 p-3 text-sm text-red-200"></p>
+    </div>
+  </section>
+</main>
+
+<!-- ACCESS VIEW -->
+<main id="access-view" class="hidden min-h-screen px-4 py-8 items-center justify-center">
+  <section class="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl md:grid-cols-[1fr_1fr]">
+    <div class="relative min-h-[260px] bg-slate-950 md:min-h-[520px]">
+      <img src="/logo/spotx-logo.svg" alt="Palpites Spotx" class="absolute inset-0 h-full w-full bg-[#07121F] object-contain p-16">
+      <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/45 to-transparent"></div>
+      <div class="absolute bottom-0 left-0 right-0 p-6">
+        <p class="text-sm font-bold uppercase tracking-[0.24em] text-yellow-300">Palpites Spotx</p>
+        <h1 class="mt-2 text-3xl font-black leading-tight">Copa do Mundo 2026</h1>
+      </div>
+    </div>
+    <div class="flex flex-col justify-center p-6 sm:p-8">
+      <p class="text-sm font-semibold text-emerald-300">Google confirmado</p>
+      <h2 class="mt-2 text-2xl font-black">Agora digite a senha do grupo</h2>
+      <p class="mt-3 text-sm leading-6 text-slate-400">A senha confirma sua participacao no Palpites Spotx.</p>
+      <label for="access-code" class="mt-6 block text-sm font-semibold text-slate-300">Senha do grupo</label>
+      <input id="access-code" type="password" autocomplete="current-password" class="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400" placeholder="Digite a senha combinada">
+      <button id="access-code-btn" type="button" class="mt-3 w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-400">Liberar acesso</button>
+      <p id="access-code-msg" class="hidden mt-3 rounded-xl border border-red-900 bg-red-950/50 p-3 text-sm text-red-200"></p>
+    </div>
+  </section>
+</main>
+
+<!-- APP VIEW -->
+<div id="app-view" class="hidden min-h-screen">
+
+  <!-- Sidebar desktop -->
+  <aside class="fixed inset-y-0 left-0 z-30 hidden w-60 border-r border-white/10 bg-[#0e1117] lg:block">
+    <div class="flex h-16 items-center gap-3 border-b border-white/10 px-5">
+      <img src="/logo/spotx-logo.svg" alt="Palpites Spotx" class="h-10 w-10 rounded-xl object-cover">
+      <div>
+        <p class="font-black">Palpites Spotx</p>
+        <p class="text-xs text-slate-500">Copa 2026</p>
+      </div>
+    </div>
+    <nav class="p-3 space-y-1">
+      <button data-view="matches" class="nav-btn w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-300 hover:bg-white/5"><i class="fa fa-futbol mr-3 w-4"></i>Palpites</button>
+      <button data-view="table" class="nav-btn w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-300 hover:bg-white/5"><i class="fa fa-table-list mr-3 w-4"></i>Tabela</button>
+      <button data-view="ranking" class="nav-btn w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-300 hover:bg-white/5"><i class="fa fa-trophy mr-3 w-4"></i>Ranking</button>
+      <button data-view="rules" class="nav-btn w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-300 hover:bg-white/5"><i class="fa fa-book-open mr-3 w-4"></i>Regras</button>
+      <button data-view="members" class="nav-btn w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-300 hover:bg-white/5"><i class="fa fa-users mr-3 w-4"></i>Membros</button>
+    </nav>
+  </aside>
+
+  <section class="lg:pl-60">
+    <!-- Header -->
+    <header class="sticky top-0 z-20 border-b border-white/10 bg-[#080b12]/90 backdrop-blur">
+      <div class="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div class="flex items-center gap-3">
+          <img src="/logo/spotx-logo.svg" alt="Palpites Spotx" class="h-9 w-9 rounded-xl object-cover lg:hidden">
+          <span class="font-black lg:hidden">Palpites Spotx</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="text-right hidden sm:block">
+            <p id="header-user-name" class="text-sm font-black">Carregando...</p>
+            <p id="header-user-email" class="text-xs text-slate-400"></p>
+          </div>
+          <button id="logout-btn" class="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold hover:bg-white/5">Sair</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Loading -->
+    <div id="app-loading" class="flex min-h-[60vh] items-center justify-center text-slate-400">
+      <i class="fa fa-spinner fa-spin mr-2"></i>Carregando...
+    </div>
+
+    <!-- App content -->
+    <div id="app-content" class="hidden mx-auto max-w-7xl px-4 pt-6 pb-28 lg:pb-6">
+
+      <!-- Mobile profile strip (hidden on xl where right panel is visible) -->
+      <div class="mb-4 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#151515] p-3 xl:hidden">
+        <img id="mobile-avatar" class="h-10 w-10 flex-shrink-0 rounded-full bg-slate-700 object-cover" src="" alt="">
+        <div class="min-w-0 flex-1">
+          <p id="mobile-name" class="truncate text-sm font-black">Participante</p>
+          <p id="mobile-role" class="text-xs text-slate-500">PLAYER</p>
+        </div>
+        <div class="flex flex-shrink-0 gap-4 text-center">
+          <div><p id="mobile-rank" class="text-sm font-black text-emerald-300">-</p><p class="text-[10px] text-slate-500">Pos</p></div>
+          <div><p id="mobile-points" class="text-sm font-black">0</p><p class="text-[10px] text-slate-500">Pts</p></div>
+          <div><p id="mobile-preds" class="text-sm font-black">0</p><p class="text-[10px] text-slate-500">Palp</p></div>
+        </div>
+      </div>
+
+      <!-- League banner -->
+      <section class="mb-5 overflow-hidden rounded-2xl border border-emerald-500/20 bg-gradient-to-r from-emerald-950 via-[#121914] to-[#171717] p-5 shadow-2xl">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex items-center gap-4 min-w-0">
+            <img src="/logo/spotx-logo.svg" alt="Palpites Spotx" class="h-16 w-16 flex-shrink-0 rounded-2xl border-2 border-emerald-500/50 bg-black object-cover shadow-xl">
+            <div class="min-w-0">
+              <p class="text-xs font-black uppercase tracking-widest text-emerald-300">Copa do Mundo 2026</p>
+              <h1 id="league-title" class="text-xl font-black truncate">Palpites Spotx</h1>
+              <p class="mt-0.5 text-xs text-slate-400"><i class="fa fa-clock mr-1 text-emerald-400"></i>Palpites fecham 1 hora antes de cada jogo</p>
+            </div>
+          </div>
+          <div class="flex gap-2 sm:flex-col sm:items-end">
+            <button onclick="openCopaModal()" class="flex-1 sm:flex-none rounded-full border border-yellow-500/40 bg-yellow-500/10 px-4 py-2 text-xs font-black text-yellow-300 hover:bg-yellow-500/20 transition-colors text-center">
+              <i class="fa fa-table-list mr-1.5"></i>Classificação
+            </button>
+            <div class="flex-1 sm:flex-none rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-xs font-black text-emerald-300 text-center truncate">
+              Código: <span id="invite-code">...</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Content grid -->
+      <div class="grid gap-5 xl:grid-cols-[1fr_360px]">
+
+        <!-- Matches section -->
+        <section id="view-matches">
+          <!-- Round nav + date tabs -->
+          <div class="mb-3 rounded-2xl border border-white/10 bg-[#151515] p-3">
+            <div class="flex items-center justify-between gap-3">
+              <button id="prev-round" class="rounded-xl bg-white/5 px-3 py-2 text-sm hover:bg-white/10"><i class="fa fa-angles-left"></i></button>
+              <h2 id="round-title" class="text-base font-black sm:text-xl">Fase de Grupos - 1</h2>
+              <button id="next-round" class="rounded-xl bg-white/5 px-3 py-2 text-sm hover:bg-white/10"><i class="fa fa-angles-right"></i></button>
+            </div>
+            <div id="round-tabs" class="mt-3 flex gap-2 overflow-x-auto scrollbar-none pb-1"></div>
+          </div>
+
+          <!-- Progress -->
+          <div class="mb-3 rounded-2xl border border-white/10 bg-[#151515] p-4">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-black"><span id="prediction-count">0</span> de <span id="match-count">0</span> palpites enviados nesta rodada</p>
+              <span id="progress-pct" class="rounded-full bg-yellow-500/20 px-3 py-1 text-xs font-black text-yellow-300">0%</span>
+            </div>
+            <div class="mt-3 h-2 rounded-full bg-black/30">
+              <div id="progress-bar" class="h-full rounded-full bg-emerald-400 transition-all" style="width:0%"></div>
+            </div>
+          </div>
+
+          <!-- Match cards -->
+          <div id="matches-list" class="space-y-3"></div>
+        </section>
+
+        <!-- Right panel -->
+        <aside id="right-panel" class="space-y-4">
+          <section class="rounded-2xl border border-white/10 bg-[#151515] p-5">
+            <div class="flex items-center gap-3">
+              <img id="profile-avatar" class="h-12 w-12 rounded-full bg-slate-700 object-cover" src="" alt="">
+              <div>
+                <p id="profile-name" class="font-black">Participante</p>
+                <p id="profile-role" class="text-xs text-slate-500">PLAYER</p>
+              </div>
+            </div>
+            <div class="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div class="rounded-xl bg-emerald-500/10 p-3">
+                <p id="profile-rank" class="text-xl font-black text-emerald-300">-</p>
+                <p class="text-xs text-slate-500">Posição</p>
+              </div>
+              <div class="rounded-xl bg-white/5 p-3">
+                <p id="profile-points" class="text-xl font-black">0</p>
+                <p class="text-xs text-slate-500">Pontos</p>
+              </div>
+              <div class="rounded-xl bg-white/5 p-3">
+                <p id="profile-preds" class="text-xl font-black">0</p>
+                <p class="text-xs text-slate-500">Palpites</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-white/10 bg-[#151515] p-5">
+            <h2 class="text-xl font-black"><i class="fa fa-trophy mr-2 text-yellow-400"></i>Ranking</h2>
+            <p class="mt-0.5 text-xs text-slate-400">Ao vivo · atualiza conforme os jogos terminam</p>
+            <div id="sidebar-ranking-list" class="mt-4 space-y-1"></div>
+          </section>
+        </aside>
+      </div>
+
+      <!-- Table view -->
+      <section id="view-table" class="hidden rounded-2xl border border-white/10 bg-[#151515] p-5">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-5">
+          <div>
+            <h2 class="text-2xl font-black"><i class="fa fa-table-list mr-2 text-emerald-300"></i>Tabela de jogos</h2>
+            <p class="mt-1 text-sm text-slate-400">Veja todos os jogos e quem ja enviou palpite.</p>
+          </div>
+          <p id="table-summary" class="text-sm font-bold text-emerald-300"></p>
+        </div>
+        <div id="champion-summary" class="mb-4"></div>
+        <div id="games-table" class="space-y-3"></div>
+      </section>
+
+      <!-- Full ranking view -->
+      <section id="view-ranking" class="hidden rounded-2xl border border-white/10 bg-[#151515] p-5">
+        <h2 class="text-2xl font-black mb-5">Ranking completo</h2>
+        <div id="ranking-full" class="space-y-2"></div>
+      </section>
+
+      <!-- Members view -->
+      <section id="view-members" class="hidden rounded-2xl border border-white/10 bg-[#151515] p-5">
+        <div class="flex items-center justify-between mb-5">
+          <div>
+            <h2 class="text-2xl font-black"><i class="fa fa-users mr-2 text-emerald-300"></i>Membros</h2>
+            <p id="members-subtitle" class="mt-1 text-sm text-slate-400">Participantes do bolão</p>
+          </div>
+        </div>
+        <div id="members-list" class="space-y-3"></div>
+      </section>
+
+      <!-- Rules view -->
+      <section id="view-rules" class="hidden space-y-4">
+
+        <!-- Pontuação -->
+        <div class="rounded-2xl border border-white/10 bg-[#151515] p-5">
+          <h2 class="text-lg font-black mb-4 flex items-center gap-2">
+            <i class="fa fa-star text-yellow-400"></i> Pontuação
+          </h2>
+          <div class="space-y-3">
+            <div class="flex items-start gap-4 rounded-xl bg-emerald-500/8 border border-emerald-500/20 px-4 py-3">
+              <span class="text-2xl font-black text-emerald-400 w-8 text-center flex-shrink-0">3</span>
+              <div>
+                <p class="font-black text-white">Placar exato</p>
+                <p class="text-sm text-slate-400">Acertou o número de gols de cada time e o resultado.</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-4 rounded-xl bg-yellow-500/8 border border-yellow-500/20 px-4 py-3">
+              <span class="text-2xl font-black text-yellow-400 w-8 text-center flex-shrink-0">1</span>
+              <div>
+                <p class="font-black text-white">Só o resultado</p>
+                <p class="text-sm text-slate-400">Acertou quem ganhou ou que empatou, mas errou os gols.</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-4 rounded-xl bg-white/3 border border-white/8 px-4 py-3">
+              <span class="text-2xl font-black text-slate-600 w-8 text-center flex-shrink-0">0</span>
+              <div>
+                <p class="font-black text-white">Errou</p>
+                <p class="text-sm text-slate-400">Não acertou nem o resultado.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Aviso: não acumulativo -->
+        <div class="rounded-2xl border border-yellow-500/25 bg-yellow-500/5 px-5 py-4 flex gap-3">
+          <i class="fa fa-triangle-exclamation text-yellow-400 mt-0.5 flex-shrink-0"></i>
+          <div>
+            <p class="font-black text-white text-sm">Pontuação não é acumulativa</p>
+            <p class="text-sm text-slate-400 mt-1">Quem acerta o placar exato ganha <b class="text-white">3 pontos no total</b> — não 3+1. O placar exato já inclui o resultado, então a pontuação maior prevalece.</p>
+          </div>
+        </div>
+
+        <!-- Outras regras -->
+        <div class="rounded-2xl border border-white/10 bg-[#151515] p-5">
+          <h2 class="text-lg font-black mb-4 flex items-center gap-2">
+            <i class="fa fa-clock text-slate-400"></i> Prazos
+          </h2>
+          <div class="space-y-2 text-sm text-slate-300">
+            <p><i class="fa fa-lock text-red-400 mr-2 w-4"></i>Os palpites fecham <b class="text-white">1 hora antes</b> do início de cada jogo.</p>
+            <p><i class="fa fa-layer-group text-blue-400 mr-2 w-4"></i>As rodadas da fase de grupos abrem em sequência — a Rodada 2 só libera quando todos os jogos da Rodada 1 terminarem.</p>
+          </div>
+        </div>
+
+      </section>
+
+    </div><!-- /app-content -->
+  </section>
+  <!-- Bottom nav (mobile only) -->
+  <nav class="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-white/10 bg-[#0e1117]/95 backdrop-blur lg:hidden">
+    <button data-view="matches" class="nav-btn flex flex-col items-center gap-0.5 px-4 py-3 text-slate-400 active">
+      <i class="fa fa-futbol text-xl"></i>
+      <span class="text-[10px] font-bold">Palpites</span>
+    </button>
+    <button data-view="table" class="nav-btn flex flex-col items-center gap-0.5 px-4 py-3 text-slate-400">
+      <i class="fa fa-table-list text-xl"></i>
+      <span class="text-[10px] font-bold">Tabela</span>
+    </button>
+    <button data-view="ranking" class="nav-btn flex flex-col items-center gap-0.5 px-4 py-3 text-slate-400">
+      <i class="fa fa-trophy text-xl"></i>
+      <span class="text-[10px] font-bold">Ranking</span>
+    </button>
+    <button data-view="rules" class="nav-btn flex flex-col items-center gap-0.5 px-4 py-3 text-slate-400">
+      <i class="fa fa-book-open text-xl"></i>
+      <span class="text-[10px] font-bold">Regras</span>
+    </button>
+    <button data-view="members" class="nav-btn flex flex-col items-center gap-0.5 px-4 py-3 text-slate-400">
+      <i class="fa fa-users text-xl"></i>
+      <span class="text-[10px] font-bold">Membros</span>
+    </button>
+  </nav>
+
+<!-- Copa Modal -->
+<div id="copa-modal" class="hidden fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 backdrop-blur-sm p-4 pt-4" onclick="if(event.target===this)closeCopaModal()">
+  <div class="w-full max-w-4xl rounded-2xl border border-white/10 bg-[#0e1117] shadow-2xl my-4">
+    <div class="flex items-center justify-between p-5 border-b border-white/10">
+      <h2 class="text-xl font-black"><i class="fa fa-trophy mr-2 text-yellow-300"></i>Tabela - Copa do mundo</h2>
+      <button onclick="closeCopaModal()" class="h-9 w-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-lg text-slate-400 leading-none">×</button>
+    </div>
+    <div class="flex gap-2 p-4 border-b border-white/10">
+      <button data-copa-tab="grupos" onclick="switchCopaTab('grupos')" class="copa-tab rounded-xl px-4 py-2 text-sm font-bold bg-emerald-500/20 text-emerald-300">Fase de Grupos</button>
+      <button data-copa-tab="matamata" onclick="switchCopaTab('matamata')" class="copa-tab rounded-xl px-4 py-2 text-sm font-bold text-slate-400 hover:bg-white/5">Mata-mata</button>
+    </div>
+    <div id="copa-grupos" class="p-4 space-y-3 max-h-[72vh] overflow-y-auto"></div>
+    <div id="copa-matamata" class="hidden p-4 overflow-auto max-h-[72vh]"></div>
+  </div>
+</div>
+
+
+<!-- CHAMPION PICK MODAL -->
+<div id="champion-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 py-8 backdrop-blur-sm">
+  <section class="w-full max-w-2xl overflow-hidden rounded-3xl border border-emerald-500/25 bg-[#0e1117] shadow-2xl">
+    <div class="border-b border-white/10 p-6">
+      <p class="text-xs font-black uppercase tracking-[0.22em] text-emerald-300">Primeiro acesso</p>
+      <h2 class="mt-2 text-2xl font-black">Escolha sua seleção campeã</h2>
+      <p class="mt-2 text-sm leading-6 text-slate-400">Antes de enviar palpites das partidas, selecione quem você acredita que será campeão da Copa do Mundo de 2026.</p>
+    </div>
+    <div class="p-6">
+      <label for="champion-search" class="text-sm font-bold text-slate-300">Buscar seleção</label>
+      <div class="mt-2 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 focus-within:border-emerald-400">
+        <i class="fa fa-magnifying-glass text-slate-500"></i>
+        <input id="champion-search" type="search" class="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" placeholder="Digite para filtrar as seleções">
+      </div>
+      <div id="champion-options" class="mt-4 max-h-[340px] space-y-2 overflow-y-auto pr-1 scrollbar-none"></div>
+      <p id="champion-msg" class="hidden mt-4 rounded-xl border border-red-900 bg-red-950/50 p-3 text-sm text-red-200"></p>
+      <button id="champion-save-btn" type="button" class="mt-5 w-full rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50" disabled>Confirmar seleção campeã</button>
+    </div>
+  </section>
+</div>
+</div><!-- /app-view -->
+
+<script>
+const SUPABASE_URL = 'https://hpfjosbwvgozxgplfcvk.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hfhA_M2MV7wGlknhVat4Mw_Mb6bBniG';
+const ACCESS_CODE_SHA256 = '9d7098c74a9b89c5bb7a2a0167a9846f4bc20f75ab00aeb1c53b04ac398a92ac';
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+const ROUNDS = [
+  {key:'GROUP-1', label:'Fase de Grupos - Rodada 1', filter:m=>m.round==='GROUP'&&m.group_round===1},
+  {key:'GROUP-2', label:'Fase de Grupos - Rodada 2', filter:m=>m.round==='GROUP'&&m.group_round===2},
+  {key:'GROUP-3', label:'Fase de Grupos - Rodada 3', filter:m=>m.round==='GROUP'&&m.group_round===3},
+  {key:'ROUND_OF_32', label:'Dezesseis avos de final', filter:m=>m.round==='ROUND_OF_32'},
+  {key:'ROUND_OF_16', label:'Oitavas de final', filter:m=>m.round==='ROUND_OF_16'},
+  {key:'QUARTER', label:'Quartas de final', filter:m=>m.round==='QUARTER'},
+  {key:'SEMI', label:'Semifinais', filter:m=>m.round==='SEMI'},
+  {key:'THIRD', label:'3º Lugar', filter:m=>m.round==='THIRD'},
+  {key:'FINAL', label:'Final', filter:m=>m.round==='FINAL'},
+];
+
+let currentUser, currentLeague, currentRole = 'PLAYER';
+let activeRound = 0, activeDate = null;
+let matches = [], predictions = [], ranking = [];
+let championPick = null, selectedChampionTeamId = null, championFilter = '';
+let pendingPreds = {};
+
+function $(id) { return document.getElementById(id); }
+function esc(v) { return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+function getRedirectUrl() { return window.location.origin + window.location.pathname; }
+const TEAM_FLAG_CODES = {
+  'africa do sul': 'za',
+  'alemanha': 'de',
+  'arabia saudita': 'sa',
+  'argelia': 'dz',
+  'argentina': 'ar',
+  'australia': 'au',
+  'austria': 'at',
+  'belgica': 'be',
+  'bolivia': 'bo',
+  'bosnia e herzegovina': 'ba',
+  'brasil': 'br',
+  'cabo verde': 'cv',
+  'camaroes': 'cm',
+  'canada': 'ca',
+  'catar': 'qa',
+  'chile': 'cl',
+  'colombia': 'co',
+  'coreia do sul': 'kr',
+  'costa do marfim': 'ci',
+  'costa rica': 'cr',
+  'croacia': 'hr',
+  'curacao': 'cw',
+  'dinamarca': 'dk',
+  'egito': 'eg',
+  'equador': 'ec',
+  'escocia': 'gb-sct',
+  'eslovaquia': 'sk',
+  'eslovenia': 'si',
+  'espanha': 'es',
+  'estados unidos': 'us',
+  'franca': 'fr',
+  'gana': 'gh',
+  'grecia': 'gr',
+  'haiti': 'ht',
+  'holanda': 'nl',
+  'honduras': 'hn',
+  'hungria': 'hu',
+  'inglaterra': 'gb-eng',
+  'ira': 'ir',
+  'italia': 'it',
+  'jamaica': 'jm',
+  'japao': 'jp',
+  'jordania': 'jo',
+  'marrocos': 'ma',
+  'mexico': 'mx',
+  'nova zelandia': 'nz',
+  'noruega': 'no',
+  'panama': 'pa',
+  'paraguai': 'py',
+  'peru': 'pe',
+  'polonia': 'pl',
+  'portugal': 'pt',
+  'republica tcheca': 'cz',
+  'romenia': 'ro',
+  'senegal': 'sn',
+  'servia': 'rs',
+  'suica': 'ch',
+  'suecia': 'se',
+  'tunisia': 'tn',
+  'turquia': 'tr',
+  'ucrania': 'ua',
+  'uruguai': 'uy',
+  'uzbequistao': 'uz',
+  'venezuela': 've'
+};
+
+function normalizeTeamName(name) {
+  return String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function teamFlagUrl(team) {
+  if (team?.flag_url) return team.flag_url;
+  const code = TEAM_FLAG_CODES[normalizeTeamName(team?.name)];
+  return code ? `https://flagcdn.com/w160/${code}.png` : '';
+}
+
+async function sha256(value) {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function showOnly(view) {
+  ['login-view','access-view','app-view'].forEach(id => $(id).classList.add('hidden'));
+  $(view).classList.remove('hidden');
+  if (view !== 'app-view') $(view).classList.add('flex');
+}
+
+function accessIsUnlocked() { return localStorage.getItem('friends_access_unlocked') === 'true'; }
+function googleStepConfirmed() { return localStorage.getItem('google_step_confirmed') === 'true'; }
+function setGoogleStepConfirmed() { localStorage.setItem('google_step_confirmed', 'true'); }
+function clearAuthSteps() {
+  localStorage.removeItem('google_step_confirmed');
+  localStorage.removeItem('friends_access_unlocked');
+  sessionStorage.removeItem('google_oauth_started');
+}
+function showMsg(id, msg) { $(id).textContent = msg; $(id).classList.remove('hidden'); }
+
+function fmtTime(v) {
+  return new Date(v).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+}
+function fmtDate(v) {
+  return new Intl.DateTimeFormat('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(v));
+}
+function getLocalDateStr(v) {
+  const d = new Date(v);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function timeUntil(date) {
+  const diff = date - new Date();
+  if (diff <= 0) return '';
+  const totalSec = Math.floor(diff / 1000);
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (d > 0) return `${d}d ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+// ── Auth ──────────────────────────────────────────────
+async function signIn() {
+  const {data} = await db.auth.getSession();
+  if (data?.session?.user) {
+    currentUser = data.session.user;
+    setGoogleStepConfirmed();
+    if (accessIsUnlocked()) await bootApp();
+    else showOnly('access-view');
+    return;
+  }
+  sessionStorage.setItem('google_oauth_started', 'true');
+  const {error} = await db.auth.signInWithOAuth({provider:'google', options:{redirectTo:getRedirectUrl()}});
+  if (error) showMsg('login-error', error.message);
+}
+
+async function ensureProfile() {
+  await db.from('profiles').upsert({
+    id: currentUser.id,
+    email: currentUser.email,
+    name: currentUser.user_metadata?.full_name || currentUser.email.split('@')[0],
+    avatar_url: currentUser.user_metadata?.avatar_url
+  });
+}
+
+// ── League ────────────────────────────────────────────
+async function autoJoinLeague() {
+  const {data, error} = await db.rpc('auto_join_default_league');
+  if (error) throw new Error(`Liga não encontrada. Execute banco-de-dados/2026-06-10-auto-join-default-league.sql no Supabase. (${error.message})`);
+  return data;
+}
+
+async function loadLeague(leagueId) {
+  const [{data: league, error: le}, {data: member}] = await Promise.all([
+    db.from('leagues').select('*').eq('id', leagueId).single(),
+    db.from('league_members').select('role').eq('league_id', leagueId).eq('user_id', currentUser.id).single()
+  ]);
+  if (le) throw le;
+  currentRole = member?.role || 'PLAYER';
+  return league;
+}
+
+async function ensureMatches() {
+  const {count} = await db.from('matches').select('id', {count:'exact', head:true}).eq('league_id', currentLeague.id);
+  if (count > 0) return;
+  const {error} = await db.rpc('seed_league_matches', {p_league_id: currentLeague.id});
+  if (error) throw new Error(`Execute banco-de-dados/2026-06-10-seed-league-matches-rpc.sql no Supabase. (${error.message})`);
+}
+
+// ── Data ──────────────────────────────────────────────
+async function loadData() {
+  const [{data: m, error: me}, {data: p, error: pe}] = await Promise.all([
+    db.from('matches')
+      .select('*, home_team:teams!matches_home_team_id_fkey(*), away_team:teams!matches_away_team_id_fkey(*)')
+      .eq('league_id', currentLeague.id)
+      .order('scheduled_at'),
+    db.from('predictions_safe').select('*').eq('league_id', currentLeague.id)
+  ]);
+  if (me) throw me;
+  if (pe) throw pe;
+  matches = m || [];
+  predictions = p || [];
+  await loadRanking();
+  initPendingPreds();
+}
+
+async function loadRanking() {
+  const {data: members} = await db.from('league_members').select('user_id, role, profiles(*)').eq('league_id', currentLeague.id);
+  ranking = (members || []).map(mbr => {
+    const mine = predictions.filter(p => p.user_id === mbr.user_id);
+    return {
+      user: mbr.profiles,
+      role: mbr.role,
+      points: mine.reduce((s, p) => s + (p.points_earned || 0), 0),
+      count: mine.length
+    };
+  }).sort((a, b) => b.points - a.points || b.count - a.count || (a.user?.name || '').localeCompare(b.user?.name || ''));
+}
+
+function initPendingPreds() {
+  matches.forEach(m => {
+    const pred = predictions.find(p => p.match_id === m.id && p.user_id === currentUser.id);
+    pendingPreds[m.id] = {
+      home: pred?.home_score ?? null,
+      away: pred?.away_score ?? null
+    };
+  });
+}
+
+// ── Predictions ───────────────────────────────────────
+function adjustPred(matchId, side, delta) {
+  if (!pendingPreds[matchId]) pendingPreds[matchId] = {home: 0, away: 0};
+  const cur = pendingPreds[matchId][side];
+  pendingPreds[matchId][side] = Math.max(0, (cur ?? 0) + delta);
+  const el = document.querySelector(`[data-score="${matchId}-${side}"]`);
+  if (el) el.textContent = pendingPreds[matchId][side];
+}
+
+async function savePrediction(matchId) {
+  if (!championPick?.team_id) {
+    requireChampionPick();
+    return;
+  }
+  const {home, away} = pendingPreds[matchId] || {};
+  if (home === null || home === undefined || away === null || away === undefined) {
+    return alert('Defina os dois placares antes de confirmar.');
+  }
+  const btn = document.querySelector(`[data-save="${matchId}"]`);
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>'; }
+  const {error} = await db.from('predictions').upsert({
+    league_id: currentLeague.id,
+    user_id: currentUser.id,
+    match_id: matchId,
+    home_score: home,
+    away_score: away
+  }, {onConflict: 'user_id,match_id'});
+  if (error) {
+    alert(error.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar'; }
+    return;
+  }
+  await loadData();
+  render();
+}
+
+// ── Quem palpitou toggle ──────────────────────────────
+function toggleWhoPredicted(matchId) {
+  const el = $(`who-${matchId}`);
+  if (!el) return;
+  if (!el.classList.contains('hidden')) { el.classList.add('hidden'); return; }
+
+  const matchPreds = predictions.filter(p => p.match_id === matchId);
+  const predictedIds = new Set(matchPreds.map(p => p.user_id));
+  const members = ranking.map(r => r.user).filter(Boolean);
+  const done = members.filter(u => predictedIds.has(u.id));
+  const missing = members.filter(u => !predictedIds.has(u.id));
+
+  el.innerHTML = `
+    <div class="py-3">
+      <p class="mb-2 text-[10px] font-black uppercase tracking-widest text-emerald-300">Já palpitaram (${done.length})</p>
+      <div class="flex flex-wrap gap-2">
+        ${done.length
+          ? done.map(u => `<span class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-300">${esc(u.name || u.email)}</span>`).join('')
+          : '<span class="text-xs text-slate-500">Ninguém ainda.</span>'}
+      </div>
+      ${missing.length
+        ? `<p class="mt-3 mb-2 text-[10px] font-black uppercase tracking-widest text-yellow-300">Faltam (${missing.length})</p>
+           <div class="flex flex-wrap gap-2">${missing.map(u => `<span class="rounded-full bg-white/5 px-3 py-1 text-xs font-bold text-slate-400">${esc(u.name || u.email)}</span>`).join('')}</div>`
+        : '<p class="mt-2 text-xs text-emerald-400">Todos ja enviaram palpite.</p>'}
+    </div>`;
+  el.classList.remove('hidden');
+}
+
+// ── Render ────────────────────────────────────────────
+function getUniqueDates(roundMatches) {
+  const seen = new Set();
+  return roundMatches
+    .map(m => getLocalDateStr(m.scheduled_at))
+    .filter(d => { if (seen.has(d)) return false; seen.add(d); return true; })
+    .sort();
+}
+
+function renderDateTabs(roundMatches) {
+  const dates = getUniqueDates(roundMatches);
+  if (!dates.length) { $('round-tabs').innerHTML = ''; return; }
+  if (!activeDate || !dates.includes(activeDate)) activeDate = dates[0];
+
+  const todayStr = getLocalDateStr(new Date());
+  const tomorrowStr = getLocalDateStr(new Date(Date.now() + 86400000));
+
+  $('round-tabs').innerHTML = dates.map(d => {
+    const dt = new Date(d + 'T12:00:00');
+    let topLabel;
+    if (d === todayStr) topLabel = 'HOJE';
+    else if (d === tomorrowStr) topLabel = 'AMANHÃ';
+    else topLabel = dt.toLocaleDateString('pt-BR', {weekday:'short'}).replace('.','').toUpperCase();
+    const dayNum = String(dt.getDate()).padStart(2, '0');
+    const monthLabel = dt.toLocaleDateString('pt-BR', {month:'short'}).replace('.','').toUpperCase();
+    const active = d === activeDate;
+
+    const dayMatches = roundMatches.filter(m => getLocalDateStr(m.scheduled_at) === d);
+    const dayPredicted = dayMatches.filter(m => predictions.some(p => p.match_id === m.id && p.user_id === currentUser.id)).length;
+    let indicator, statusLabel, statusClass;
+    if (dayMatches.length > 0 && dayPredicted === dayMatches.length) {
+      indicator = `<i class="fa fa-check block text-[9px] mt-0.5 text-emerald-400"></i>`;
+      statusLabel = 'Feito';
+      statusClass = 'bg-emerald-500/15 text-emerald-300';
+    } else if (dayPredicted > 0) {
+      indicator = `<span class="block w-1.5 h-1.5 rounded-full bg-yellow-400 mx-auto mt-1"></span>`;
+      statusLabel = `${dayPredicted}/${dayMatches.length}`;
+      statusClass = 'bg-yellow-500/15 text-yellow-300';
+    } else {
+      indicator = `<span class="block w-1.5 h-1.5 rounded-full bg-red-400/70 mx-auto mt-1"></span>`;
+      statusLabel = 'Pendente';
+      statusClass = 'bg-red-500/10 text-red-300';
+    }
+
+    const isPast = d < todayStr;
+    return `<button data-date="${d}" title="${dayPredicted} de ${dayMatches.length} palpites enviados neste dia" class="date-tab min-w-[86px] flex-shrink-0 rounded-xl px-3 py-2 text-center font-black transition-opacity ${active ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500' : 'bg-white/5 text-slate-400 hover:bg-white/10'} ${isPast && !active ? 'opacity-40 hover:opacity-70' : ''}">
+      <span class="block text-[10px] ${active ? 'text-emerald-400' : 'text-slate-500'}">${topLabel}</span>
+      <span class="block text-xs">${dayNum} ${monthLabel}</span>
+      ${indicator}
+      <span class="mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${statusClass}">${statusLabel}</span>
+    </button>`;
+  }).join('');
+
+  document.querySelectorAll('.date-tab').forEach(btn => btn.onclick = () => {
+    activeDate = btn.dataset.date;
+    render();
+  });
+}
+
+function getAllMatches() {
+  return [...matches].sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+}
+
+function getChampionTeams() {
+  const map = new Map();
+  matches.forEach(match => {
+    [match.home_team, match.away_team].forEach(team => {
+      if (team?.id && team?.name) map.set(team.id, team);
+    });
+  });
+  return [...map.values()].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+}
+
+async function loadChampionPick() {
+  const {data, error} = await db.from('champion_predictions')
+    .select('team_id, teams(*)')
+    .eq('league_id', currentLeague.id)
+    .eq('user_id', currentUser.id)
+    .maybeSingle();
+  if (error && error.code !== 'PGRST116') throw error;
+  championPick = data || null;
+  selectedChampionTeamId = championPick?.team_id || null;
+}
+
+function renderChampionOptions() {
+  const box = $('champion-options');
+  if (!box) return;
+  const filter = championFilter.trim().toLowerCase();
+  const teams = getChampionTeams().filter(team => !filter || (team.name || '').toLowerCase().includes(filter));
+
+  if (!teams.length) {
+    box.innerHTML = '<div class="rounded-2xl border border-white/10 bg-black/20 p-4 text-center text-sm text-slate-400">Nenhuma seleção encontrada.</div>';
+    return;
+  }
+
+  box.innerHTML = teams.map(team => {
+    const active = String(selectedChampionTeamId) === String(team.id);
+    return `<button type="button" data-champion-team="${team.id}" class="flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${active ? 'border-emerald-400 bg-emerald-500/15' : 'border-white/10 bg-black/20 hover:bg-white/5'}">
+      ${teamFlagUrl(team) ? `<img src="${esc(teamFlagUrl(team))}" class="h-7 w-10 flex-shrink-0 object-contain" onerror="this.style.display='none'">` : '<span class="h-7 w-10 flex-shrink-0 rounded bg-white/5"></span>'}
+      <span class="min-w-0 flex-1 truncate text-sm font-black">${esc(team.name)}</span>
+      <i class="fa ${active ? 'fa-circle-check text-emerald-300' : 'fa-circle text-slate-700'}"></i>
+    </button>`;
+  }).join('');
+
+  box.querySelectorAll('[data-champion-team]').forEach(btn => {
+    btn.onclick = () => {
+      selectedChampionTeamId = Number(btn.dataset.championTeam);
+      $('champion-save-btn').disabled = false;
+      renderChampionOptions();
+    };
+  });
+}
+
+async function saveChampionPick() {
+  if (!selectedChampionTeamId) return showMsg('champion-msg', 'Selecione uma seleção para continuar.');
+  const btn = $('champion-save-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>Salvando...';
+  const {error} = await db.from('champion_predictions').upsert({
+    league_id: currentLeague.id,
+    user_id: currentUser.id,
+    team_id: selectedChampionTeamId
+  }, {onConflict: 'league_id,user_id'});
+  if (error) {
+    btn.disabled = false;
+    btn.textContent = 'Confirmar seleção campeã';
+    return showMsg('champion-msg', error.message);
+  }
+  await loadChampionPick();
+  $('champion-modal').classList.add('hidden');
+  $('app-content')?.classList.remove('hidden');
+  btn.textContent = 'Confirmar seleção campeã';
+  switchView('matches');
+  render();
+}
+
+function requireChampionPick() {
+  if (championPick?.team_id) return;
+  selectedChampionTeamId = null;
+  championFilter = '';
+  if ($('champion-search')) $('champion-search').value = '';
+  if ($('champion-msg')) $('champion-msg').classList.add('hidden');
+  if ($('champion-save-btn')) $('champion-save-btn').disabled = true;
+  renderChampionOptions();
+  $('champion-modal').classList.remove('hidden');
+}
+function getLivePeriod(scheduledAt, minute) {
+  // Use real minute from API when available
+  if (minute !== null && minute !== undefined) {
+    if (minute <= 45) return `${minute}'`;
+    if (minute <= 50) return 'INTERVALO';
+    return `${minute}'`;
+  }
+  // Fallback: estimate from elapsed time
+  const mins = (new Date() - new Date(scheduledAt)) / 60000;
+  if (mins < 0)  return null;
+  if (mins < 50) return '1º TEMPO';
+  if (mins < 65) return 'INTERVALO';
+  return '2º TEMPO';
+}
+
+function calcLivePoints(pred, hs, as_) {
+  if (!pred || hs === null || as_ === null) return null;
+  if (pred.home_score === hs && pred.away_score === as_) return 3;
+  const pr = pred.home_score > pred.away_score ? 'H' : pred.home_score < pred.away_score ? 'A' : 'D';
+  const lr = hs > as_ ? 'H' : hs < as_ ? 'A' : 'D';
+  return pr === lr ? 1 : 0;
+}
+
+function renderMatchCard(m) {
+  const pred = predictions.find(p => p.match_id === m.id && p.user_id === currentUser.id);
+
+  // Fallback: infer status from time when Supabase hasn't updated yet.
+  // _espnFinished persists matches ESPN already confirmed as FINISHED across loadData() resets.
+  const minsElapsed = (new Date() - new Date(m.scheduled_at)) / 60000;
+  const espnFinished = window._espnFinished?.has(m.id);
+  const effectiveStatus = (m.status === 'FINISHED' || espnFinished)
+    ? 'FINISHED'
+    : (m.status === 'LIVE' || (minsElapsed >= 0 && minsElapsed < 135))
+      ? 'LIVE'
+      : (minsElapsed >= 135 && minsElapsed < 180)
+        ? 'FINISHED'
+        : m.status;
+
+  const isFinished = effectiveStatus === 'FINISHED';
+  const isLive     = effectiveStatus === 'LIVE';
+  const isLocked   = m.prediction_opens_at && new Date(m.prediction_opens_at) > new Date();
+  const closes     = new Date(m.prediction_closes_at || m.scheduled_at);
+  const isClosed   = isFinished || isLive || isLocked || m.status !== 'UPCOMING' || closes <= new Date();
+  const ph = pendingPreds[m.id]?.home;
+  const pa = pendingPreds[m.id]?.away;
+  const matchPredCount = predictions.filter(p => p.match_id === m.id).length;
+  const showScore = isLive || isFinished; // always show score area when live/finished
+  const homeScoreVal = m.home_score !== null ? m.home_score : (isLive ? '?' : null);
+  const awayScoreVal = m.away_score !== null ? m.away_score : (isLive ? '?' : null);
+
+  // ── Status badge ──────────────────────────────────────
+  let statusLabel, statusClass;
+  if (isFinished) {
+    statusLabel = 'Finalizado';
+    statusClass = 'bg-blue-500/10 text-blue-300';
+  } else if (isLive) {
+    const period = getLivePeriod(m.scheduled_at, m.minute);
+    statusLabel = `<span class="live-dot inline-block w-2 h-2 rounded-full bg-red-400 mr-1.5 align-middle"></span>AO VIVO${period ? ` · ${period}` : ''}`;
+    statusClass = 'bg-red-500/15 text-red-300 border border-red-500/30';
+  } else if (isLocked) {
+    statusLabel = `Bloqueado · libera após rodada ${m.group_round - 1}`;
+    statusClass = 'bg-slate-500/10 text-slate-400';
+  } else if (isClosed) {
+    statusLabel = 'Fechado';
+    statusClass = 'bg-red-500/10 text-red-300';
+  } else {
+    const until = timeUntil(closes);
+    statusLabel = until ? `Fecha em ${until}` : 'Aberto';
+    statusClass = 'bg-emerald-500/10 text-emerald-300';
+  }
+
+  // ── Top-right badge ───────────────────────────────────
+  // Bar handles prediction display for closed matches. Badge only shows "Sem palpite".
+  let topRight = '';
+  if (isClosed && !isLocked && !pred) {
+    topRight = `<span class="text-[11px] font-bold text-slate-600">Sem palpite</span>`;
+  }
+
+  // ── Team + score columns ──────────────────────────────
+  const flagSize = showScore ? 'h-13 w-18' : 'h-11 w-16';
+  const teamCol = (team, placeholder, score) =>
+    `<div class="flex flex-1 flex-col items-center gap-1 min-w-0">
+      <img src="${esc(teamFlagUrl(team))}" onerror="this.style.visibility='hidden'" class="${flagSize} rounded-md bg-white/5 object-contain p-1" style="${showScore?'height:52px;width:72px':'height:44px;width:64px'}">
+      <p class="text-sm font-black text-center leading-tight px-1">${esc(team?.name || placeholder || '')}</p>
+      ${score !== null ? `<span class="text-4xl font-black text-white tabular-nums leading-none mt-1">${score}</span>` : ''}
+    </div>`;
+
+  const homeCol = teamCol(m.home_team, m.home_placeholder, showScore ? homeScoreVal : null);
+  const awayCol = teamCol(m.away_team, m.away_placeholder, showScore ? awayScoreVal : null);
+
+  // ── Center block ──────────────────────────────────────
+  let centerBlock, centerClass;
+  if (showScore) {
+    centerBlock = `<span class="text-xl text-slate-700 font-black">×</span>`;
+    centerClass = 'flex-shrink-0 self-start mt-4 px-2';
+  } else if (isLocked) {
+    centerBlock = `<span class="text-2xl text-slate-600">🔒</span>`;
+    centerClass = 'flex-shrink-0 flex items-center justify-center';
+  } else if (isClosed) {
+    centerBlock = `<span class="text-3xl font-black text-slate-600">×</span>`;
+    centerClass = 'flex-shrink-0 flex items-center justify-center';
+  } else {
+    const b = 'h-9 w-9 rounded-full bg-white/5 text-xl font-black hover:bg-white/10 flex items-center justify-center leading-none select-none';
+    centerBlock = `<div class="flex items-center gap-2">
+      <button onclick="adjustPred(${m.id},'home',-1)" class="${b}">−</button>
+      <span data-score="${m.id}-home" class="w-8 text-center text-2xl font-black tabular-nums">${ph!==null?ph:'−'}</span>
+      <button onclick="adjustPred(${m.id},'home',1)" class="${b}">+</button>
+      <span class="text-slate-600 font-black mx-1">×</span>
+      <button onclick="adjustPred(${m.id},'away',-1)" class="${b}">−</button>
+      <span data-score="${m.id}-away" class="w-8 text-center text-2xl font-black tabular-nums">${pa!==null?pa:'−'}</span>
+      <button onclick="adjustPred(${m.id},'away',1)" class="${b}">+</button>
+    </div>`;
+    centerClass = 'flex-shrink-0 flex items-center justify-center';
+  }
+
+  // ── Prediction bar (always when there's a pred and match is closed) ────
+  let predBar = '';
+  if (pred && isClosed && !isLocked) {
+    let pts = 0;
+    let livePreview = false;
+    if (isFinished) {
+      pts = pred.points_earned ?? 0;
+    } else if (isLive && m.home_score !== null) {
+      pts = calcLivePoints(pred, m.home_score, m.away_score) ?? 0;
+      livePreview = true;
+    }
+    let bg, ptsCls, icon;
+    if (pts === 3)      { bg = 'bg-emerald-950/80 border-emerald-500/40'; ptsCls = 'bg-emerald-500/20 text-emerald-300'; icon = 'fa-check text-emerald-400'; }
+    else if (pts === 1) { bg = 'bg-yellow-950/50 border-yellow-500/30';   ptsCls = 'bg-yellow-500/20 text-yellow-300';  icon = 'fa-check text-yellow-400'; }
+    else                { bg = 'bg-black/30 border-white/5';               ptsCls = 'bg-white/5 text-slate-500';          icon = isFinished ? 'fa-xmark text-slate-600' : 'fa-futbol text-slate-600'; }
+    const prefix = isFinished ? '+' : (livePreview ? '→ ' : '');
+    const ptsLabel = `${prefix}${pts} pt${pts !== 1 ? 's' : ''}`;
+    predBar = `
+      <div class="mx-3 mb-3 flex items-center justify-between rounded-xl border ${bg} px-4 py-3 gap-3">
+        <span class="text-sm font-black text-slate-200 min-w-0 truncate">
+          <i class="fa ${icon} mr-2 text-xs"></i>Seu palpite: ${pred.home_score} × ${pred.away_score}
+        </span>
+        <span class="rounded-full ${ptsCls} px-3 py-1 text-sm font-black flex-shrink-0">${ptsLabel}</span>
+      </div>`;
+  }
+
+  // ── Footer (vertical icon + label, like the reference) ─
+  const fBtn = (action, icon, label, extraCls = '') =>
+    `<button ${action} class="flex flex-col items-center justify-center gap-1 py-3 text-slate-400 hover:text-white hover:bg-white/5 ${extraCls}">
+      <i class="fa ${icon} text-base"></i>
+      <span class="text-[9px] font-bold uppercase tracking-wide leading-none">${label}</span>
+    </button>`;
+  const fDiv = (icon, label) =>
+    `<div class="flex flex-col items-center justify-center gap-1 py-3 text-slate-500">
+      <i class="fa ${icon} text-base"></i>
+      <span class="text-[9px] font-bold uppercase tracking-wide leading-none">${label}</span>
+    </div>`;
+
+  const timeSlot = fDiv('fa-clock', fmtTime(m.scheduled_at));
+  const predsSlot = fBtn(`onclick="toggleWhoPredicted(${m.id})"`, 'fa-users', `${matchPredCount} palpites`, 'text-emerald-400');
+  const confirmSlot = !isClosed
+    ? fBtn(`data-save="${m.id}" onclick="savePrediction(${m.id})"`, pred ? 'fa-rotate-right' : 'fa-check', pred ? 'Atualizar' : 'Confirmar', 'text-emerald-300')
+    : '';
+
+  const footerCols = !isClosed ? 3 : 2;
+  const footer = `<div class="border-t border-white/10 grid grid-cols-${footerCols} divide-x divide-white/10">
+    ${timeSlot}${predsSlot}${confirmSlot}
+  </div>`;
+
+  // ── Article wrapper ───────────────────────────────────
+  const articleCls = 'rounded-2xl border border-white/10 bg-[#161616] overflow-hidden';
+
+  return `<article data-card="${m.id}" class="${articleCls}">
+    <div class="flex items-center justify-between px-4 pt-3 pb-2">
+      <span class="inline-flex items-center rounded-full ${statusClass} px-3 py-1 text-xs font-bold"${!isClosed?` data-closes="${m.prediction_closes_at}"`:''}>${statusLabel}</span>
+      ${topRight}
+    </div>
+    <div class="flex items-center gap-2 px-3 ${showScore?'pt-3 pb-5':'py-4'}">
+      ${homeCol}
+      <div class="${centerClass}">${centerBlock}</div>
+      ${awayCol}
+    </div>
+    ${predBar}
+    ${footer}
+    <div id="who-${m.id}" class="hidden border-t border-white/10 px-4 py-3 text-xs text-slate-400"></div>
+  </article>`;
+}
+
+function startCountdownTicker() {
+  clearInterval(window._countdownTicker);
+  window._countdownTicker = setInterval(() => {
+    let expired = false;
+    document.querySelectorAll('[data-closes]').forEach(el => {
+      const until = timeUntil(new Date(el.dataset.closes));
+      if (until) {
+        el.textContent = `Fecha em ${until}`;
+      } else {
+        expired = true;
+      }
+    });
+    if (expired) { clearInterval(window._countdownTicker); render(); }
+  }, 1000);
+}
+
+// STATUS_MAP from football-data.org status → our internal status
+const FD_STATUS_MAP = { IN_PLAY: 'LIVE', PAUSED: 'LIVE', FINISHED: 'FINISHED' };
+
+async function pollLiveScores() {
+  try {
+    const res = await fetch('/api/live');
+    if (!res.ok) return;
+    const { matches: liveData } = await res.json();
+
+    let changed = false;
+    for (const live of liveData) {
+      // Match by UTC timestamp (within 1 min tolerance), fallback to team names
+      const liveTs = new Date(live.utcDate).getTime();
+      let m = matches.find(m => Math.abs(new Date(m.scheduled_at).getTime() - liveTs) < 60000);
+      if (!m && live.homeTeam && live.awayTeam) {
+        const hn = live.homeTeam.toLowerCase();
+        const an = live.awayTeam.toLowerCase();
+        m = matches.find(m =>
+          (m.home_team?.name?.toLowerCase().includes(hn) || hn.includes(m.home_team?.name?.toLowerCase() || '___')) &&
+          (m.away_team?.name?.toLowerCase().includes(an) || an.includes(m.away_team?.name?.toLowerCase() || '___'))
+        );
+      }
+      if (!m) continue;
+
+      const newStatus = live.status === 'IN_PLAY'   ? 'LIVE'
+                      : live.status === 'PAUSED'    ? 'LIVE'
+                      : live.status === 'FINISHED'  ? 'FINISHED'
+                      : m.status;
+      if (
+        m.status !== newStatus ||
+        m.home_score !== live.homeScore ||
+        m.away_score !== live.awayScore ||
+        m.minute !== live.minute
+      ) {
+        m.status    = newStatus;
+        m.home_score = live.homeScore;
+        m.away_score = live.awayScore;
+        m.minute    = live.minute;
+        // Persist FINISHED across loadData() resets until Supabase catches up
+        if (newStatus === 'FINISHED') {
+          window._espnFinished = window._espnFinished || new Set();
+          window._espnFinished.add(m.id);
+        }
+        changed = true;
+      }
+    }
+
+    if (changed) render();
+  } catch (_) { /* network error — silently skip */ }
+}
+
+function isMatchWindowActive() {
+  return matches.some(m => {
+    if (m.status === 'LIVE') return true;
+    const diff = (new Date(m.scheduled_at) - new Date()) / 60000;
+    return diff > -180 && diff < 30; // 180 min covers 90min + extra time + delays
+  });
+}
+
+function startLivePoller() {
+  clearInterval(window._livePoller);
+  const tick = async () => {
+    if (!isMatchWindowActive()) return;
+    await pollLiveScores();
+    if (!window._lastSupabaseRefresh || Date.now() - window._lastSupabaseRefresh > 120000) {
+      await loadData();
+      window._lastSupabaseRefresh = Date.now();
+      render();
+    }
+  };
+  tick(); // dispara imediatamente ao entrar na página
+  window._livePoller = setInterval(tick, 30000);
+}
+
+function render() {
+  const round = ROUNDS[activeRound] || ROUNDS[0];
+  const roundMatches = getAllMatches().filter(round.filter);
+
+  $('round-title').textContent = round.label;
+  $('prev-round')?.classList.toggle('hidden', ROUNDS.length <= 1);
+  $('next-round')?.classList.toggle('hidden', ROUNDS.length <= 1);
+  renderDateTabs(roundMatches);
+
+  const visible = activeDate
+    ? roundMatches.filter(m => getLocalDateStr(m.scheduled_at) === activeDate)
+    : roundMatches;
+
+  const predicted = roundMatches.filter(m => predictions.some(p => p.match_id === m.id && p.user_id === currentUser.id)).length;
+  $('match-count').textContent = roundMatches.length;
+  $('prediction-count').textContent = predicted;
+  const pct = roundMatches.length ? Math.round(predicted / roundMatches.length * 100) : 0;
+  $('progress-pct').textContent = pct + '%';
+  $('progress-bar').style.width = pct + '%';
+
+  $('matches-list').innerHTML = visible.length
+    ? visible.map(renderMatchCard).join('')
+    : '<div class="rounded-2xl border border-white/10 bg-[#151515] p-10 text-center text-slate-400">Nenhum jogo carregado nesta rodada.</div>';
+
+  renderRanking();
+  renderTable();
+  renderMembers();
+  startCountdownTicker();
+  startLivePoller();
+}
+
+function renderRanking() {
+  const myIndex = ranking.findIndex(r => r.user?.id === currentUser.id);
+  const me = ranking[myIndex];
+  const displayName = currentUser.user_metadata?.full_name || currentUser.email.split('@')[0];
+  const avatarUrl = currentUser.user_metadata?.avatar_url || '';
+  const rankLabel = myIndex >= 0 ? `#${myIndex + 1}` : '-';
+  $('profile-name').textContent = displayName;
+  $('profile-role').textContent = currentRole;
+  $('profile-avatar').src = avatarUrl;
+  $('profile-rank').textContent = rankLabel;
+  $('profile-points').textContent = me?.points || 0;
+  $('profile-preds').textContent = me?.count || 0;
+  if ($('mobile-name')) {
+    $('mobile-name').textContent = displayName;
+    $('mobile-role').textContent = currentRole;
+    $('mobile-avatar').src = avatarUrl;
+    $('mobile-rank').textContent = rankLabel;
+    $('mobile-points').textContent = me?.points || 0;
+    $('mobile-preds').textContent = me?.count || 0;
+  }
+
+  const html = ranking.map((r, i) => `
+    <div class="flex items-center gap-3 rounded-2xl ${r.user?.id === currentUser.id ? 'bg-emerald-500/10 ring-1 ring-emerald-500/40' : ''} p-2">
+      <span class="w-7 text-sm font-black text-slate-400">${i + 1}º</span>
+      <img src="${esc(r.user?.avatar_url || '')}" class="h-8 w-8 rounded-full bg-slate-700 object-cover flex-shrink-0">
+      <div class="min-w-0 flex-1">
+        <p class="truncate text-sm font-black">${esc(r.user?.name || r.user?.email || 'Participante')}</p>
+        <p class="text-xs text-slate-500">${r.count} palpites</p>
+      </div>
+      <p class="text-lg font-black text-emerald-400">${r.points}</p>
+    </div>`).join('') || '<p class="text-sm text-slate-400">Ranking disponível quando os membros entrarem.</p>';
+
+  if ($('ranking-full')) $('ranking-full').innerHTML = html;
+
+  // Sidebar compact ranking
+  const sidebarHtml = ranking.map((r, i) => {
+    const isMe = r.user?.id === currentUser.id;
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}º`;
+    return `<div class="flex items-center gap-2 rounded-xl px-2 py-1.5 ${isMe ? 'bg-emerald-500/10 ring-1 ring-emerald-500/30' : 'hover:bg-white/3'}">
+      <span class="w-7 text-center text-sm flex-shrink-0">${medal}</span>
+      <img src="${esc(r.user?.avatar_url || '')}" class="h-7 w-7 rounded-full bg-slate-700 object-cover flex-shrink-0">
+      <p class="truncate text-xs font-bold flex-1">${esc(r.user?.name || r.user?.email?.split('@')[0] || 'Participante')}</p>
+      <p class="text-sm font-black ${r.points > 0 ? 'text-emerald-400' : 'text-slate-500'} flex-shrink-0">${r.points} pts</p>
+    </div>`;
+  }).join('') || '<p class="text-xs text-slate-500 px-2">Nenhum ponto ainda.</p>';
+
+  if ($('sidebar-ranking-list')) $('sidebar-ranking-list').innerHTML = sidebarHtml;
+}
+
+function toggleTablePreds(matchId) {
+  const el = $(`tpreds-${matchId}`);
+  if (!el) return;
+  const isHidden = el.classList.contains('hidden');
+  el.classList.toggle('hidden', !isHidden);
+  const btn = $(`tpreds-btn-${matchId}`);
+  if (btn) btn.innerHTML = isHidden
+    ? '<i class="fa fa-chevron-up mr-1.5 text-[10px]"></i>Fechar palpites'
+    : `<i class="fa fa-users mr-1.5 text-[10px]"></i>Ver palpites`;
+}
+
+function renderTable() {
+  const members = ranking.map(r => r.user).filter(Boolean);
+  const tableMatches = getAllMatches();
+  const tablePredictions = predictions.filter(p => tableMatches.some(m => m.id === p.match_id));
+  const championTeam = championPick?.teams;
+  const championFlag = teamFlagUrl(championTeam);
+  if ($('champion-summary')) {
+    $('champion-summary').innerHTML = championTeam
+      ? `<div class="flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3">
+          ${championFlag ? `<img src="${esc(championFlag)}" class="h-9 w-12 flex-shrink-0 object-contain" onerror="this.style.display='none'">` : '<span class="h-9 w-12 flex-shrink-0 rounded bg-white/5"></span>'}
+          <div class="min-w-0 flex-1">
+            <p class="text-[11px] font-black uppercase tracking-widest text-emerald-300">Sua seleção campeã</p>
+            <p class="truncate text-sm font-black text-white">${esc(championTeam.name)}</p>
+          </div>
+          <span class="rounded-full border border-emerald-500/30 px-3 py-1 text-[10px] font-black text-emerald-300">Definitivo</span>
+        </div>`
+      : '';
+  }
+  if ($('table-summary')) $('table-summary').textContent = `${tablePredictions.length} palpites em ${tableMatches.length} jogos`;
+  if (!$('games-table') || !tableMatches.length) {
+    if ($('games-table')) $('games-table').innerHTML = '<p class="text-sm text-slate-400">Nenhum jogo carregado ainda.</p>';
+    return;
+  }
+
+  $('games-table').innerHTML = tableMatches.map(m => {
+    const matchPreds = predictions.filter(p => p.match_id === m.id);
+    const predictedIds = new Set(matchPreds.map(p => p.user_id));
+    const done = members.filter(u => predictedIds.has(u.id));
+    const missing = members.filter(u => !predictedIds.has(u.id));
+    const isFinished = m.status === 'FINISHED';
+    const isClosed = isFinished || new Date(m.prediction_closes_at || m.scheduled_at) <= new Date();
+    const statusLabel = isFinished ? 'Finalizado' : isClosed ? 'Fechado' : 'Aberto';
+    const statusClass = isFinished
+      ? 'bg-blue-500/10 text-blue-300'
+      : isClosed ? 'bg-red-500/10 text-red-300' : 'bg-emerald-500/10 text-emerald-300';
+
+    const homeName = esc(m.home_team?.name || m.home_placeholder || '');
+    const awayName = esc(m.away_team?.name || m.away_placeholder || '');
+    const homeFlagUrl = teamFlagUrl(m.home_team);
+    const homeFlag = homeFlagUrl
+      ? `<img src="${esc(homeFlagUrl)}" class="h-9 w-13 object-contain flex-shrink-0" onerror="this.style.display='none'">`
+      : '';
+    const awayFlagUrl = teamFlagUrl(m.away_team);
+    const awayFlag = awayFlagUrl
+      ? `<img src="${esc(awayFlagUrl)}" class="h-9 w-13 object-contain flex-shrink-0" onerror="this.style.display='none'">`
+      : '';
+
+    // Expandable predictions panel
+    const withUsers = matchPreds
+      .map(p => ({ p, u: members.find(u => u.id === p.user_id) }))
+      .filter(x => x.u)
+      .sort((a, b) => (b.p.points_earned||0) - (a.p.points_earned||0));
+
+    const predsPanel = withUsers.length ? `
+      <div id="tpreds-${m.id}" class="hidden border-t border-white/5 px-4 py-3">
+        <div class="grid gap-1.5 sm:grid-cols-2">
+          ${withUsers.map(({p, u}) => {
+            const pts = p.points_earned || 0;
+            const ptClr = pts===3?'text-emerald-300':pts===1?'text-yellow-300':'text-slate-600';
+            const ptBg  = pts===3?'bg-emerald-500/10':pts===1?'bg-yellow-500/10':'bg-white/5';
+            const hasPred = p.home_score !== null && p.home_score !== undefined;
+            return `<div class="flex items-center gap-2 rounded-xl bg-black/20 px-3 py-2">
+              <img src="${esc(u.avatar_url||'')}" onerror="this.style.opacity='0'" class="h-7 w-7 rounded-full bg-slate-700 object-cover flex-shrink-0">
+              <span class="flex-1 text-xs font-bold truncate">${esc(u.name||u.email)}</span>
+              ${hasPred
+                ? `<span class="text-xs font-black text-slate-300 tabular-nums">${p.home_score}×${p.away_score}</span>
+                   <span class="rounded-full ${ptBg} px-2 py-0.5 text-xs font-black ${ptClr} ml-1">${isFinished?'+':''}${isFinished?pts:'?'}</span>`
+                : `<span class="flex items-center gap-1 text-[10px] font-bold text-slate-500"><i class="fa fa-check text-emerald-700"></i>palpitou</span>`}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : '';
+
+    // Footer bar
+    const missingBadges = !isFinished && missing.length
+      ? `<div class="mt-2 flex flex-wrap gap-1">${missing.map(u => `<span class="rounded-full bg-yellow-500/10 px-2 py-0.5 text-[10px] font-bold text-yellow-300">${esc(u.name||u.email)}</span>`).join('')}</div>`
+      : '';
+
+    const viewPredsBtn = withUsers.length
+      ? `<button id="tpreds-btn-${m.id}" onclick="toggleTablePreds(${m.id})" class="flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-400 hover:bg-white/10 hover:text-white transition-colors">
+          <i class="fa fa-users mr-1.5 text-[10px]"></i>Ver palpites
+        </button>`
+      : '';
+
+    return `<article class="rounded-2xl border border-white/10 bg-[#161616] overflow-hidden">
+      <!-- Header row -->
+      <div class="flex items-center justify-between px-4 py-2.5">
+        <span class="rounded-full ${statusClass} px-3 py-1 text-[11px] font-bold">${statusLabel}</span>
+        <span class="text-[11px] text-slate-500">${fmtDate(m.scheduled_at)}</span>
+      </div>
+      <!-- Teams + score -->
+      <div class="flex items-center px-4 pb-3 gap-2">
+        <div class="flex flex-1 items-center gap-2 justify-end min-w-0">
+          <span class="font-black text-sm truncate">${homeName}</span>
+          ${homeFlag}
+        </div>
+        <div class="flex-shrink-0 w-24 text-center">
+          ${isFinished && m.home_score !== null
+            ? `<div class="inline-flex items-center gap-1.5 rounded-xl bg-black/30 px-3 py-1.5">
+                 <span class="text-2xl font-black tabular-nums">${m.home_score}</span>
+                 <span class="text-slate-600 font-black">×</span>
+                 <span class="text-2xl font-black tabular-nums">${m.away_score}</span>
+               </div>`
+            : `<span class="text-slate-700 font-black text-xl">×</span>`}
+        </div>
+        <div class="flex flex-1 items-center gap-2 min-w-0">
+          ${awayFlag}
+          <span class="font-black text-sm truncate">${awayName}</span>
+        </div>
+      </div>
+      <!-- Footer stats + toggle -->
+      <div class="flex items-center justify-between px-4 pb-3 gap-3 flex-wrap">
+        <div>
+          <div class="flex items-center gap-3 text-xs text-slate-500">
+            <span><span class="font-black text-white">${done.length}</span> palpitaram</span>
+            ${missing.length > 0
+              ? `<span><span class="font-black text-yellow-300">${missing.length}</span> faltam</span>`
+              : `<span class="text-emerald-400 font-bold">✓ todos</span>`}
+          </div>
+          ${missingBadges}
+        </div>
+        ${viewPredsBtn}
+      </div>
+      ${predsPanel}
+    </article>`;
+  }).join('');
+}
+
+function renderMembers() {
+  const rolePt = {OWNER: 'Criador', ADMIN: 'Admin', PLAYER: 'Jogador'};
+  const roleOrder = {OWNER: 0, ADMIN: 1, PLAYER: 2};
+  const sorted = [...ranking].sort((a, b) => {
+    const diff = (roleOrder[a.role] ?? 2) - (roleOrder[b.role] ?? 2);
+    return diff !== 0 ? diff : b.points - a.points;
+  });
+  const countLabel = `${sorted.length} participante${sorted.length !== 1 ? 's' : ''}`;
+
+  // Card completo usado na aba Membros
+  const fullCard = r => {
+    const isMe = r.user?.id === currentUser.id;
+    const roleLabel = rolePt[r.role] ?? 'Jogador';
+    const roleColor = r.role === 'OWNER' ? 'bg-yellow-500/10 text-yellow-300'
+      : r.role === 'ADMIN' ? 'bg-blue-500/10 text-blue-300' : 'bg-white/5 text-slate-400';
+    return `<div class="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+      <img src="${esc(r.user?.avatar_url || '')}" onerror="this.style.opacity='0'" class="h-12 w-12 flex-shrink-0 rounded-full bg-slate-700 object-cover">
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="font-black truncate">${esc(r.user?.full_name || r.user?.email || 'Anônimo')}</p>
+          ${isMe ? '<span class="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-300">Você</span>' : ''}
+          <span class="rounded-full ${roleColor} px-2 py-0.5 text-[11px] font-bold">${roleLabel}</span>
+        </div>
+        <p class="mt-1 text-xs text-slate-500">${r.count} palpite${r.count !== 1 ? 's' : ''} · ${r.points} pts</p>
+      </div>
+    </div>`;
+  };
+
+  // Linha compacta usada no sidebar
+  const sidebarRow = r => {
+    const isMe = r.user?.id === currentUser.id;
+    const roleLabel = rolePt[r.role] ?? 'Jogador';
+    const roleColor = r.role === 'OWNER' ? 'text-yellow-300' : r.role === 'ADMIN' ? 'text-blue-300' : 'text-slate-400';
+    return `<div class="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
+      <img src="${esc(r.user?.avatar_url || '')}" onerror="this.style.opacity='0'" class="h-9 w-9 flex-shrink-0 rounded-full bg-slate-700 object-cover">
+      <div class="min-w-0 flex-1">
+        <p class="truncate text-sm font-black">${esc(r.user?.full_name || r.user?.email || 'Anônimo')}${isMe ? ' <span class="text-emerald-400">·</span>' : ''}</p>
+        <p class="text-xs ${roleColor}">${roleLabel} · ${r.count} palpite${r.count !== 1 ? 's' : ''}</p>
+      </div>
+    </div>`;
+  };
+
+  const empty = '<p class="text-slate-500 text-sm py-4 text-center">Nenhum membro encontrado.</p>';
+  if ($('members-subtitle')) $('members-subtitle').textContent = countLabel;
+  if ($('members-list')) $('members-list').innerHTML = sorted.map(fullCard).join('') || empty;
+  if ($('sidebar-members-count')) $('sidebar-members-count').textContent = countLabel;
+  if ($('sidebar-members-list')) $('sidebar-members-list').innerHTML = sorted.map(sidebarRow).join('') || empty;
+}
+
+function switchView(view) {
+  if (!championPick?.team_id) {
+    $('app-content')?.classList.add('hidden');
+    requireChampionPick();
+    return;
+  }
+  ['matches','table','ranking','rules','members'].forEach(v => $(`view-${v}`)?.classList.toggle('hidden', v !== view));
+  $('right-panel')?.classList.toggle('hidden', view !== 'matches');
+  document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
+  if (view === 'members') renderMembers();
+}
+
+function showAppError(message) {
+  showOnly('app-view');
+  $('app-loading').classList.remove('hidden');
+  $('app-content').classList.add('hidden');
+  $('app-loading').innerHTML = `<div class="max-w-xl rounded-2xl border border-red-900 bg-red-950/40 p-6 text-center mx-4">
+    <i class="fa fa-circle-exclamation mb-3 block text-3xl text-red-400"></i>
+    <p class="font-black text-red-200">Não foi possível carregar o Palpites Spotx</p>
+    <p class="mt-2 text-sm text-red-100/80">${esc(message)}</p>
+  </div>`;
+}
+
+async function startLeague() {
+  $('league-title').textContent = currentLeague.name;
+  $('invite-code').textContent = currentLeague.invite_code;
+  await ensureMatches();
+  await loadData();
+  await loadChampionPick();
+  $('app-loading').classList.add('hidden');
+  if (!championPick?.team_id) {
+    $('app-content').classList.add('hidden');
+    requireChampionPick();
+    return;
+  }
+  $('app-content').classList.remove('hidden');
+  switchView('matches');
+  render();
+}
+
+async function bootApp() {
+  showOnly('app-view');
+  $('app-loading').classList.remove('hidden');
+  $('app-content').classList.add('hidden');
+  $('header-user-name').textContent = currentUser.user_metadata?.full_name || currentUser.email.split('@')[0];
+  $('header-user-email').textContent = currentUser.email;
+  await ensureProfile();
+  const leagueId = await autoJoinLeague();
+  currentLeague = await loadLeague(leagueId);
+  await startLeague();
+}
+
+async function init() {
+  const {data, error} = await db.auth.getSession();
+  if (error || !data.session) { clearAuthSteps(); return showOnly('login-view'); }
+  currentUser = data.session.user;
+  if (sessionStorage.getItem('google_oauth_started') === 'true') {
+    sessionStorage.removeItem('google_oauth_started');
+    setGoogleStepConfirmed();
+  }
+  if (!googleStepConfirmed()) return showOnly('login-view');
+  if (!accessIsUnlocked()) return showOnly('access-view');
+  try { await bootApp(); } catch (err) { showAppError(err.message || 'Erro desconhecido.'); }
+}
+
+// ── Copa Modal ────────────────────────────────────────
+function openCopaModal() {
+  $('copa-modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  switchCopaTab('grupos');
+}
+function closeCopaModal() {
+  $('copa-modal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+function switchCopaTab(tab) {
+  ['grupos','matamata'].forEach(t => $(`copa-${t}`)?.classList.toggle('hidden', t !== tab));
+  document.querySelectorAll('.copa-tab').forEach(btn => {
+    const on = btn.dataset.copaTab === tab;
+    btn.className = `copa-tab rounded-xl px-4 py-2 text-sm font-bold ${on ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:bg-white/5'}`;
+  });
+  if (tab === 'grupos') renderStandingsModal();
+  else renderBracket();
+}
+
+function computeStandings() {
+  const gms = matches.filter(m => m.round === 'GROUP');
+  const teamMap = new Map();
+  const adj = new Map();
+  gms.forEach(m => {
+    [m.home_team, m.away_team].forEach(t => {
+      if (!t) return;
+      teamMap.set(t.id, t);
+      if (!adj.has(t.id)) adj.set(t.id, new Set());
+    });
+    if (m.home_team && m.away_team) {
+      adj.get(m.home_team.id).add(m.away_team.id);
+      adj.get(m.away_team.id).add(m.home_team.id);
+    }
+  });
+  const visited = new Set();
+  const groups = [];
+  for (const tid of teamMap.keys()) {
+    if (visited.has(tid)) continue;
+    const grp = []; const q = [tid];
+    while (q.length) {
+      const id = q.shift();
+      if (visited.has(id)) continue;
+      visited.add(id); grp.push(id);
+      adj.get(id)?.forEach(n => { if (!visited.has(n)) q.push(n); });
+    }
+    groups.push(grp);
+  }
+  return groups.map(ids => {
+    const teams = ids.map(id => {
+      const team = teamMap.get(id);
+      let gp=0, w=0, d=0, l=0, gf=0, ga=0;
+      gms.filter(m => m.status==='FINISHED' && (m.home_team?.id===id || m.away_team?.id===id)).forEach(m => {
+        const h = m.home_team?.id === id;
+        const tf = h ? m.home_score : m.away_score;
+        const ta = h ? m.away_score : m.home_score;
+        if (tf===null||ta===null) return;
+        gp++; gf+=tf; ga+=ta;
+        if (tf>ta) w++; else if (tf===ta) d++; else l++;
+      });
+      return { team, gp, w, d, l, gf, ga, gd: gf-ga, pts: w*3+d };
+    }).sort((a,b) => b.pts-a.pts || b.gd-a.gd || b.gf-a.gf || (a.team?.name||'').localeCompare(b.team?.name||''));
+    const earliest = Math.min(...gms
+      .filter(m => ids.some(id => m.home_team?.id===id || m.away_team?.id===id))
+      .map(m => new Date(m.scheduled_at).getTime()));
+    return { teams, earliest };
+  }).sort((a,b) => a.earliest - b.earliest);
+}
+
+function renderStandingsModal() {
+  const groups = computeStandings();
+  const labels = 'ABCDEFGHIJKL';
+  if (!groups.length) {
+    $('copa-grupos').innerHTML = '<p class="text-sm text-slate-500 py-8 text-center">Nenhum jogo de grupo encontrado.</p>';
+    return;
+  }
+  $('copa-grupos').innerHTML = groups.map((g, gi) => `
+    <div class="rounded-2xl border border-white/10 bg-[#151515] overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-2.5 bg-black/20">
+        <span class="text-sm font-black">Grupo <span class="text-emerald-300">${labels[gi] ?? gi+1}</span></span>
+        <span class="text-xs text-slate-600">${g.teams.length} times</span>
+      </div>
+      <table class="w-full text-sm">
+        <thead><tr class="text-[9px] font-black uppercase tracking-widest text-slate-600 border-b border-white/5">
+          <th class="text-left px-3 py-2">Time</th>
+          <th class="px-2 py-2 text-center">J</th>
+          <th class="px-2 py-2 text-center">V</th>
+          <th class="px-2 py-2 text-center">E</th>
+          <th class="px-2 py-2 text-center">D</th>
+          <th class="px-2 py-2 text-center hidden sm:table-cell">GP</th>
+          <th class="px-2 py-2 text-center hidden sm:table-cell">GC</th>
+          <th class="px-2 py-2 text-center">SG</th>
+          <th class="px-2 py-2 text-center">PTS</th>
+        </tr></thead>
+        <tbody>${g.teams.map((t, ti) => `
+          <tr class="border-b border-white/5 last:border-0 ${ti<2 ? 'bg-emerald-500/5' : ''}">
+            <td class="px-3 py-2.5">
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-black w-3 ${ti<2 ? 'text-emerald-400' : 'text-slate-600'}">${ti+1}</span>
+                ${teamFlagUrl(t.team) ? `<img src="${esc(teamFlagUrl(t.team))}" class="h-4 w-6 object-contain flex-shrink-0" onerror="this.style.display='none'">` : ''}
+                <span class="font-bold">${esc(t.team?.name||'?')}</span>
+              </div>
+            </td>
+            <td class="px-2 py-2.5 text-center text-slate-400">${t.gp}</td>
+            <td class="px-2 py-2.5 text-center font-bold">${t.w}</td>
+            <td class="px-2 py-2.5 text-center">${t.d}</td>
+            <td class="px-2 py-2.5 text-center text-slate-500">${t.l}</td>
+            <td class="px-2 py-2.5 text-center text-slate-400 hidden sm:table-cell">${t.gf}</td>
+            <td class="px-2 py-2.5 text-center text-slate-400 hidden sm:table-cell">${t.ga}</td>
+            <td class="px-2 py-2.5 text-center font-bold ${t.gd>0?'text-emerald-300':t.gd<0?'text-red-400':'text-slate-500'}">${t.gd>0?'+':''}${t.gd}</td>
+            <td class="px-2 py-2.5 text-center font-black">${t.pts}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="px-3 py-2 flex gap-4 text-[10px] text-slate-600 bg-black/10">
+        <span class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-sm bg-emerald-500/40"></span>Classificado</span>
+      </div>
+    </div>`).join('');
+}
+
+function renderBracket() {
+  const byRound = key => matches.filter(m => m.round === key);
+  const r32 = byRound('ROUND_OF_32');
+  const r16 = byRound('ROUND_OF_16');
+  const qf  = byRound('QUARTER');
+  const sf  = byRound('SEMI');
+  const fin = byRound('FINAL');
+
+  if (!r32.length && !r16.length && !qf.length && !sf.length) {
+    $('copa-matamata').innerHTML = `
+      <div class="py-16 text-center">
+        <i class="fa fa-sitemap text-5xl block mb-5" style="color:#1e293b"></i>
+        <p class="font-black text-slate-400 text-lg">Mata-mata ainda nao comecou</p>
+        <p class="text-sm mt-2 text-slate-600">O chaveamento aparece aqui quando a fase de grupos terminar.</p>
+      </div>`;
+    return;
+  }
+
+  const roundDefs = [];
+  if (r32.length) roundDefs.push({ label:'Oitavas', all: r32 });
+  if (r16.length) roundDefs.push({ label: r32.length ? 'Quartas' : 'Oitavas', all: r16 });
+  if (qf.length)  roundDefs.push({ label: r32.length ? 'Semi' : r16.length ? 'Quartas' : 'Semi', all: qf });
+  if (sf.length)  roundDefs.push({ label: 'Semi', all: sf });
+
+  const half = arr => Math.ceil(arr.length / 2);
+
+  function teamRow(team, score, win) {
+    if (!team) return `<div class="br-team" style="color:#475569;font-style:italic">TBD</div>`;
+    return `<div class="br-team${win?' br-win':''}">
+      ${teamFlagUrl(team) ? `<img src="${esc(teamFlagUrl(team))}" style="height:12px;width:18px;object-fit:contain;flex-shrink:0" onerror="this.style.display='none'">` : ''}
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${esc(team.name||'')}</span>
+      ${score!==null&&score!==undefined ? `<span class="br-score">${score}</span>` : ''}
+    </div>`;
+  }
+
+  function matchBox(m) {
+    if (!m) return `<div class="br-slot" style="opacity:.2"><div class="br-team" style="color:#475569">TBD</div><div class="br-team" style="color:#475569">TBD</div></div>`;
+    const f = m.status === 'FINISHED';
+    return `<div class="br-slot">
+      ${teamRow(m.home_team, f?m.home_score:null, f&&m.home_score>m.away_score)}
+      ${teamRow(m.away_team, f?m.away_score:null, f&&m.away_score>m.home_score)}
+    </div>`;
+  }
+
+  function buildColumn(rd, side) {
+    const ms = side === 'left' ? rd.all.slice(0, half(rd.all)) : rd.all.slice(half(rd.all));
+    let items = '';
+    for (let i = 0; i < ms.length; i += 2) {
+      if (ms[i+1] !== undefined) {
+        items += `<div class="br-pair">${matchBox(ms[i])}${matchBox(ms[i+1])}</div>`;
+      } else {
+        items += `<div class="br-single">${matchBox(ms[i])}</div>`;
+      }
+    }
+    return `<div class="br-round"><div class="br-label">${rd.label}</div>${items}</div>`;
+  }
+
+  const leftCols  = roundDefs.map(r => buildColumn(r, 'left')).join('');
+  const rightCols = roundDefs.map(r => buildColumn(r, 'right')).join('');
+
+  $('copa-matamata').innerHTML = `
+    <div style="display:flex;align-items:stretch;min-height:460px;gap:6px">
+      <div style="display:flex;flex:1;gap:8px;align-items:stretch">${leftCols}</div>
+      <div style="width:130px;flex-shrink:0;display:flex;flex-direction:column;padding:0 4px">
+        <div class="br-label" style="color:#f59e0b">Final</div>
+        <div style="flex:1;display:flex;align-items:center">${matchBox(fin[0]||null)}</div>
+      </div>
+      <div style="display:flex;flex:1;gap:8px;align-items:stretch;flex-direction:row-reverse">${rightCols}</div>
+    </div>`;
+}
+
+// ── Events ────────────────────────────────────────────
+$('google-login-btn').onclick = signIn;
+$('access-code-btn').onclick = async () => {
+  const hash = await sha256($('access-code').value);
+  if (hash !== ACCESS_CODE_SHA256) return showMsg('access-code-msg', 'Senha incorreta.');
+  localStorage.setItem('friends_access_unlocked', 'true');
+  try { await bootApp(); } catch (err) { showAppError(err.message || 'Erro desconhecido.'); }
+};
+$('access-code').onkeydown = e => { if (e.key === 'Enter') $('access-code-btn').click(); };
+$('logout-btn').onclick = async () => {
+  localStorage.removeItem('friends_access_unlocked');
+  await db.auth.signOut();
+  showOnly('login-view');
+};
+$('prev-round').onclick = () => { activeRound = Math.max(0, activeRound - 1); activeDate = null; render(); };
+$('next-round').onclick = () => { activeRound = Math.min(ROUNDS.length - 1, activeRound + 1); activeDate = null; render(); };
+document.querySelectorAll('.nav-btn').forEach(btn => btn.onclick = () => switchView(btn.dataset.view));
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,10 @@
+﻿desktop.ini
+.env
+.env.*
+node_modules/
+.vercel/
+*.log
+.github/workflows/
+
+.vercel
+.env*

@@ -1,0 +1,6 @@
+﻿{
+  "source": "flagcdn.com fallback via site/index.html TEAM_FLAG_CODES",
+  "note": "As bandeiras sao resolvidas pelo nome da selecao. Se o Supabase nao trouxer flag_url, o front monta https://flagcdn.com/w160/{codigo}.png.",
+  "folder": "site/bandeiras",
+  "local_files_required": false
+}

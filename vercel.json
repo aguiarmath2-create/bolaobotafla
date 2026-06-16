@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*",   "destination": "/api/:path*" },
+    { "source": "/logo/:path*",  "destination": "/site/logo/:path*" },
+    { "source": "/",             "destination": "/site/index.html" }
+  ]
+}

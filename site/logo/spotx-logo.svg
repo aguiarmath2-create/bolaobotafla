@@ -1,0 +1,8 @@
+﻿<svg width="320" height="320" viewBox="0 0 320 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="320" height="320" rx="72" fill="#07121F"/>
+  <rect x="18" y="18" width="284" height="284" rx="58" fill="#003B69" stroke="#10B981" stroke-width="6"/>
+  <path d="M66 177c42 20 86 13 131-22 23-18 42-27 57-27-18 25-42 50-73 76-39 33-79 46-120 39 0 0 5-66 5-66Z" fill="#F8FAFC"/>
+  <path d="M72 105c38 18 74 16 108-7 21-14 43-22 66-23-20 24-41 44-64 59-40 26-79 31-117 15l7-44Z" fill="#F8FAFC"/>
+  <path d="M63 199c43 18 86 11 129-20 15-11 31-19 49-23-21 24-44 46-70 65-36 25-75 34-117 27l9-49Z" fill="#10B981"/>
+  <text x="160" y="266" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="900" fill="#F8FAFC">SPOTX</text>
+</svg>
