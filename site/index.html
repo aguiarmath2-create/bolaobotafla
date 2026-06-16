@@ -1069,6 +1069,7 @@ async function pollLiveScores() {
     const { matches: liveData } = await res.json();
 
     let changed = false;
+    let newlyFinished = false;
     for (const live of liveData) {
       // Match by UTC timestamp (within 1 min tolerance), fallback to team names
       const liveTs = new Date(live.utcDate).getTime();
@@ -1104,17 +1105,21 @@ async function pollLiveScores() {
         if (newStatus === 'FINISHED') {
           window._espnFinished = window._espnFinished || new Set();
           window._espnFinished.add(m.id);
-          // live.js já escreveu no Supabase (await antes da resposta).
-          // Recarrega dados para predictions_safe revelar palpites dos outros usuários.
           if (!wasFinished && live.homeScore !== null && live.awayScore !== null) {
-            loadData().then(() => render());
+            newlyFinished = true;
           }
         }
         changed = true;
       }
     }
 
-    if (changed) render();
+    // Recarrega do banco uma única vez após processar todos os jogos finalizados
+    if (newlyFinished) {
+      await loadData();
+      render();
+    } else if (changed) {
+      render();
+    }
   } catch (_) { /* network error — silently skip */ }
 }
 
@@ -1139,8 +1144,6 @@ function startLivePoller() {
       render();
     }
   };
-  // Primeiro poll sempre sem restrição de janela: sincroniza partidas finalizadas não gravadas no DB
-  pollLiveScores();
   window._livePoller = setInterval(tick, 30000);
 }
 
@@ -1455,6 +1458,7 @@ async function startLeague() {
   }
   $('app-content').classList.remove('hidden');
   switchView('matches');
+  await pollLiveScores(); // Sincroniza placares antes do primeiro render
   render();
   startLivePoller();
 }
