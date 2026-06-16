@@ -84,9 +84,11 @@ export default async function handler(req, res) {
         awayTeam:  m.awayTeam?.name,
       });
 
-      // Quando finalizada, persiste no Supabase para trigger calcular pontos
+      // Quando finalizada, aguarda a escrita no Supabase antes de retornar a resposta.
+      // Assim quando o cliente receber a resposta e chamar loadData(), o DB já está atualizado
+      // e a view predictions_safe já revela os palpites de todos os usuários.
       if (m.status === 'FINISHED' && score && SERVICE_KEY) {
-        supabasePatch(m.utcDate, score.home, score.away).catch(e =>
+        await supabasePatch(m.utcDate, score.home, score.away).catch(e =>
           console.error('[live] supabase patch falhou:', e.message)
         );
       }

@@ -1104,12 +1104,10 @@ async function pollLiveScores() {
         if (newStatus === 'FINISHED') {
           window._espnFinished = window._espnFinished || new Set();
           window._espnFinished.add(m.id);
-          // Grava no Supabase assim que detectar fim de partida com placar
+          // live.js já escreveu no Supabase (await antes da resposta).
+          // Recarrega dados para predictions_safe revelar palpites dos outros usuários.
           if (!wasFinished && live.homeScore !== null && live.awayScore !== null) {
-            db.from('matches')
-              .update({ status: 'FINISHED', home_score: live.homeScore, away_score: live.awayScore })
-              .eq('id', m.id)
-              .then(({ error }) => { if (!error) loadData().then(() => render()); });
+            loadData().then(() => render());
           }
         }
         changed = true;
