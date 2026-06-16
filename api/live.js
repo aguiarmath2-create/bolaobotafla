@@ -1,7 +1,8 @@
 // Vercel Serverless Function — live scores via ESPN public API (sem autenticação, sem rate limit).
+// Busca os últimos 2 dias + hoje para capturar partidas recém-finalizadas que saíram do scoreboard.
 // Quando FINISHED, grava no Supabase para o trigger trg_compute_match_points disparar.
 
-const ESPN_URL    = 'https://site.api.espn.com/apis/site/v2/sports/soccer/FIFA.WORLD/scoreboard';
+const ESPN_BASE   = 'https://site.api.espn.com/apis/site/v2/sports/soccer/FIFA.WORLD/scoreboard';
 const SUPA_URL    = 'https://pmrbtugoyuwlgobovlzg.supabase.co/rest/v1/matches';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -19,17 +20,38 @@ const ESPN_STATUS_MAP = {
 
 const SYNC_STATUSES = new Set(['IN_PLAY', 'PAUSED', 'FINISHED']);
 
+function espnUrl(daysOffset) {
+  const d = new Date(Date.now() + daysOffset * 86400000);
+  const s = d.toISOString().slice(0, 10).replace(/-/g, '');
+  return `${ESPN_BASE}?dates=${s}`;
+}
+
+async function fetchEspnEvents(url) {
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  const data = await r.json();
+  return data.events || [];
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
-    const espnRes = await fetch(ESPN_URL);
-    if (!espnRes.ok) {
-      return res.status(espnRes.status).json({ error: `ESPN API error: ${espnRes.status}` });
-    }
+    // Busca 2 dias atrás, ontem, hoje e amanhã em paralelo
+    const [e2, e1, e0, e_1] = await Promise.all([
+      fetchEspnEvents(espnUrl(-2)),
+      fetchEspnEvents(espnUrl(-1)),
+      fetchEspnEvents(espnUrl(0)),
+      fetchEspnEvents(espnUrl(1)),
+    ]);
 
-    const data   = await espnRes.json();
-    const events = data.events || [];
+    // Deduplica por event.id
+    const seen = new Set();
+    const events = [...e2, ...e1, ...e0, ...e_1].filter(e => {
+      if (seen.has(e.id)) return false;
+      seen.add(e.id);
+      return true;
+    });
 
     // Debug: ?debug=1 retorna dados brutos da ESPN
     if (req.query?.debug === '1') {
@@ -103,7 +125,7 @@ export default async function handler(req, res) {
 }
 
 async function supabasePatch(utcDate, homeScore, awayScore) {
-  const url = `${SUPA_URL}?scheduled_at=eq.${encodeURIComponent(utcDate)}&status=neq.FINISHED`;
+  const url = `${SUPA_URL}?scheduled_at=eq.${encodeURIComponent(utcDate)}`;
   const patchRes = await fetch(url, {
     method: 'PATCH',
     headers: {

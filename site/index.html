@@ -606,12 +606,12 @@ async function loadRanking() {
   ranking = (members || []).map(mbr => {
     const mine = predictions.filter(p => p.user_id === mbr.user_id);
     const points = mine.reduce((s, p) => {
-      if (p.points_earned !== null && p.points_earned !== undefined) return s + p.points_earned;
       const match = matches.find(m => m.id === p.match_id);
       if (match && match.home_score !== null && match.away_score !== null) {
+        // Placar em memória (ESPN) é autoritativo
         return s + (calcLivePoints(p, match.home_score, match.away_score) ?? 0);
       }
-      return s;
+      return s + (p.points_earned ?? 0);
     }, 0);
     return {
       user: mbr.profiles,
@@ -966,11 +966,12 @@ function renderMatchCard(m) {
     let pts = 0;
     let livePreview = false;
     if (isFinished) {
-      if (pred.points_earned !== null && pred.points_earned !== undefined) {
-        pts = pred.points_earned;
-      } else if (m.home_score !== null && m.away_score !== null) {
+      if (m.home_score !== null && m.away_score !== null) {
+        // Placar em memória (ESPN) é autoritativo — sempre recalcula
         pts = calcLivePoints(pred, m.home_score, m.away_score) ?? 0;
-        livePreview = true;
+        livePreview = pred.points_earned === null || pred.points_earned === undefined;
+      } else if (pred.points_earned !== null && pred.points_earned !== undefined) {
+        pts = pred.points_earned;
       }
     } else if (isLive && m.home_score !== null) {
       pts = calcLivePoints(pred, m.home_score, m.away_score) ?? 0;
