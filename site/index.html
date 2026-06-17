@@ -109,18 +109,19 @@
   <section class="lg:pl-60">
     <!-- Header -->
     <header class="sticky top-0 z-20 border-b border-white/10 bg-[#080b12]/90 backdrop-blur">
-      <div class="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div class="flex items-center gap-3">
-          <img src="/logo/botafla.jpg" alt="Bolão do Botafla" class="h-9 w-9 rounded-xl object-cover lg:hidden">
-          <span id="mobile-league-name" class="font-black lg:hidden">Bolão do Botafla</span>
+      <!-- Mobile header: logo | nome centralizado | sair -->
+      <div class="relative flex min-h-14 items-center px-4 lg:hidden">
+        <img src="/logo/botafla.jpg" alt="" class="h-9 w-9 flex-shrink-0 rounded-xl object-cover">
+        <span id="mobile-league-name" class="absolute left-0 right-0 text-center text-sm font-black pointer-events-none px-14 truncate">Bolão do Botafla</span>
+        <button id="logout-btn" class="ml-auto flex-shrink-0 rounded-xl border border-white/10 px-4 py-2 text-sm font-bold hover:bg-white/5">Sair</button>
+      </div>
+      <!-- Desktop header: nome/email + sair -->
+      <div class="mx-auto hidden min-h-16 max-w-7xl items-center justify-end gap-3 px-4 py-3 lg:flex">
+        <div class="text-right">
+          <p id="header-user-name" class="text-sm font-black">Carregando...</p>
+          <p id="header-user-email" class="text-xs text-slate-400"></p>
         </div>
-        <div class="flex items-center gap-3">
-          <div class="text-right hidden sm:block">
-            <p id="header-user-name" class="text-sm font-black">Carregando...</p>
-            <p id="header-user-email" class="text-xs text-slate-400"></p>
-          </div>
-          <button id="logout-btn" class="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold hover:bg-white/5">Sair</button>
-        </div>
+        <button id="logout-btn-desktop" class="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold hover:bg-white/5">Sair</button>
       </div>
     </header>
 
@@ -1722,10 +1723,12 @@ $('access-code-btn').onclick = async () => {
 };
 $('league-code').onkeydown     = e => { if (e.key === 'Enter') $('league-password').focus(); };
 $('league-password').onkeydown = e => { if (e.key === 'Enter') $('access-code-btn').click(); };
-$('logout-btn').onclick = async () => {
+async function handleLogout() {
   await db.auth.signOut();
   showOnly('login-view');
-};
+}
+$('logout-btn').onclick = handleLogout;
+$('logout-btn-desktop').onclick = handleLogout;
 $('prev-round').onclick = () => { activeRound = Math.max(0, activeRound - 1); activeDate = null; render(); };
 $('next-round').onclick = () => { activeRound = Math.min(ROUNDS.length - 1, activeRound + 1); activeDate = null; render(); };
 document.querySelectorAll('.nav-btn').forEach(btn => btn.onclick = () => switchView(btn.dataset.view));
