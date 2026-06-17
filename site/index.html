@@ -64,20 +64,22 @@
 <main id="access-view" class="hidden min-h-screen px-4 py-8 items-center justify-center">
   <section class="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl md:grid-cols-[1fr_1fr]">
     <div class="relative min-h-[260px] bg-slate-950 md:min-h-[520px]">
-      <img src="/logo/botafla.jpg" alt="Bolão do Botafla" class="absolute inset-0 h-full w-full object-cover">
+      <img src="/logo/botafla.jpg" alt="Copa do Mundo 2026" class="absolute inset-0 h-full w-full object-cover">
       <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/45 to-transparent"></div>
       <div class="absolute bottom-0 left-0 right-0 p-6">
-        <p class="text-sm font-bold uppercase tracking-[0.24em] text-yellow-300">Bolão do Botafla</p>
-        <h1 class="mt-2 text-3xl font-black leading-tight">Copa do Mundo 2026</h1>
+        <p class="text-sm font-bold uppercase tracking-[0.24em] text-yellow-300">Copa do Mundo 2026</p>
+        <h1 class="mt-2 text-3xl font-black leading-tight">Entrar no Bolao</h1>
       </div>
     </div>
     <div class="flex flex-col justify-center p-6 sm:p-8">
       <p class="text-sm font-semibold text-emerald-300">Google confirmado</p>
-      <h2 class="mt-2 text-2xl font-black">Agora digite a senha do grupo</h2>
-      <p class="mt-3 text-sm leading-6 text-slate-400">A senha confirma sua participacao no Bolão do Botafla.</p>
-      <label for="access-code" class="mt-6 block text-sm font-semibold text-slate-300">Senha do grupo</label>
-      <input id="access-code" type="password" autocomplete="current-password" class="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400" placeholder="Digite a senha combinada">
-      <button id="access-code-btn" type="button" class="mt-3 w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-400">Liberar acesso</button>
+      <h2 class="mt-2 text-2xl font-black">Acesse sua liga</h2>
+      <p class="mt-3 text-sm leading-6 text-slate-400">Digite o codigo da liga e a senha combinada com seu grupo.</p>
+      <label for="league-code" class="mt-6 block text-sm font-semibold text-slate-300">Codigo da liga</label>
+      <input id="league-code" type="text" autocomplete="off" spellcheck="false" class="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400 tracking-widest" placeholder="Ex: 6f5670ef434b">
+      <label for="league-password" class="mt-4 block text-sm font-semibold text-slate-300">Senha da liga</label>
+      <input id="league-password" type="password" autocomplete="current-password" class="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400" placeholder="Digite a senha combinada">
+      <button id="access-code-btn" type="button" class="mt-4 w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-400">Entrar na liga</button>
       <p id="access-code-msg" class="hidden mt-3 rounded-xl border border-red-900 bg-red-950/50 p-3 text-sm text-red-200"></p>
     </div>
   </section>
@@ -383,7 +385,10 @@
 <script>
 const SUPABASE_URL = 'https://pmrbtugoyuwlgobovlzg.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_478hmk4Q097jRdrmB40hOQ_NUrEID3f';
-const ACCESS_CODE_SHA256 = 'e8a13f365fb6d8a993adfbc2156c702e5a3e877b43cb81a1d688911169a5c0d1';
+const LEAGUE_CONFIGS = {
+  '6f5670ef434b': 'e8a13f365fb6d8a993adfbc2156c702e5a3e877b43cb81a1d688911169a5c0d1', // BotaFla
+  '2964427416ab': '029d3de15470169250765909b9ddfbabe5fcbe69838344b5787c07216c75fb77', // Rafaiol
+};
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 const ROUNDS = [
@@ -499,12 +504,10 @@ function showOnly(view) {
   if (view !== 'app-view') $(view).classList.add('flex');
 }
 
-function accessIsUnlocked() { return localStorage.getItem('friends_access_unlocked') === 'true'; }
 function googleStepConfirmed() { return localStorage.getItem('google_step_confirmed') === 'true'; }
 function setGoogleStepConfirmed() { localStorage.setItem('google_step_confirmed', 'true'); }
 function clearAuthSteps() {
   localStorage.removeItem('google_step_confirmed');
-  localStorage.removeItem('friends_access_unlocked');
   sessionStorage.removeItem('google_oauth_started');
 }
 function showMsg(id, msg) { $(id).textContent = msg; $(id).classList.remove('hidden'); }
@@ -540,8 +543,7 @@ async function signIn() {
   if (data?.session?.user) {
     currentUser = data.session.user;
     setGoogleStepConfirmed();
-    if (accessIsUnlocked()) await bootApp();
-    else showOnly('access-view');
+    await bootApp();
     return;
   }
   sessionStorage.setItem('google_oauth_started', 'true');
@@ -1481,6 +1483,7 @@ async function bootApp() {
   $('header-user-email').textContent = currentUser.email;
   await ensureProfile();
   const leagueId = await autoJoinLeague();
+  if (!leagueId) { showOnly('access-view'); return; }
   currentLeague = await loadLeague(leagueId);
   await startLeague();
 }
@@ -1494,7 +1497,6 @@ async function init() {
     setGoogleStepConfirmed();
   }
   if (!googleStepConfirmed()) return showOnly('login-view');
-  if (!accessIsUnlocked()) return showOnly('access-view');
   try { await bootApp(); } catch (err) { showAppError(err.message || 'Erro desconhecido.'); }
 }
 
@@ -1692,14 +1694,31 @@ function renderBracket() {
 // ── Events ────────────────────────────────────────────
 $('google-login-btn').onclick = signIn;
 $('access-code-btn').onclick = async () => {
-  const hash = await sha256($('access-code').value);
-  if (hash !== ACCESS_CODE_SHA256) return showMsg('access-code-msg', 'Senha incorreta.');
-  localStorage.setItem('friends_access_unlocked', 'true');
-  try { await bootApp(); } catch (err) { showAppError(err.message || 'Erro desconhecido.'); }
+  const code = $('league-code').value.trim().toLowerCase();
+  const pwd  = $('league-password').value;
+  if (!code) return showMsg('access-code-msg', 'Digite o codigo da liga.');
+  if (!pwd)  return showMsg('access-code-msg', 'Digite a senha.');
+  if (!LEAGUE_CONFIGS[code]) return showMsg('access-code-msg', 'Codigo de liga invalido. Verifique com o organizador.');
+  const hash = await sha256(pwd);
+  if (hash !== LEAGUE_CONFIGS[code]) return showMsg('access-code-msg', 'Senha incorreta para esta liga.');
+  const btn = $('access-code-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>Entrando...';
+  const { data, error } = await db.rpc('join_league_by_invite_code', { p_invite_code: code });
+  if (error || !data) {
+    btn.disabled = false;
+    btn.textContent = 'Entrar na liga';
+    return showMsg('access-code-msg', 'Erro ao entrar na liga. Tente novamente.');
+  }
+  showOnly('app-view');
+  $('app-loading').classList.remove('hidden');
+  $('app-content').classList.add('hidden');
+  currentLeague = await loadLeague(data);
+  await startLeague();
 };
-$('access-code').onkeydown = e => { if (e.key === 'Enter') $('access-code-btn').click(); };
+$('league-code').onkeydown     = e => { if (e.key === 'Enter') $('league-password').focus(); };
+$('league-password').onkeydown = e => { if (e.key === 'Enter') $('access-code-btn').click(); };
 $('logout-btn').onclick = async () => {
-  localStorage.removeItem('friends_access_unlocked');
   await db.auth.signOut();
   showOnly('login-view');
 };

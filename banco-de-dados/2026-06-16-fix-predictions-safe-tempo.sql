@@ -1,7 +1,8 @@
--- Fix: predictions_safe revela placares dos outros usuarios apos 135 min do inicio da partida.
+-- Fix: predictions_safe revela placares dos outros usuarios apos 135 min do inicio da partida,
+-- mas pontos so aparecem quando a partida esta FINISHED.
 -- Sem isso, o placar so aparece quando m.status = 'FINISHED' no banco, que depende do
 -- supabasePatch funcionar. Com esta mudanca, o site mostra os palpites automaticamente
--- pelo horario mesmo que o banco ainda nao tenha sido atualizado.
+-- pelo horario mesmo que o banco ainda nao tenha sido atualizado, sem contar pontos antes do fim.
 --
 -- Execute no SQL Editor do Supabase (uma unica vez).
 
@@ -25,7 +26,6 @@ select
   end as away_score,
   case
     when m.status = 'FINISHED'                                      then p.points_earned
-    when now() > m.scheduled_at + interval '135 minutes'           then p.points_earned
     else 0
   end as points_earned,
   p.created_at,
