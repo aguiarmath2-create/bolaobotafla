@@ -93,7 +93,7 @@
     <div class="flex h-16 items-center gap-3 border-b border-white/10 px-5">
       <img src="/logo/botafla.jpg" alt="Bolão do Botafla" class="h-10 w-10 rounded-xl object-cover">
       <div>
-        <p class="font-black">Bolão do Botafla</p>
+        <p id="sidebar-league-name" class="font-black">Bolão do Botafla</p>
         <p class="text-xs text-slate-500">Copa 2026</p>
       </div>
     </div>
@@ -112,7 +112,7 @@
       <div class="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div class="flex items-center gap-3">
           <img src="/logo/botafla.jpg" alt="Bolão do Botafla" class="h-9 w-9 rounded-xl object-cover lg:hidden">
-          <span class="font-black lg:hidden">Bolão do Botafla</span>
+          <span id="mobile-league-name" class="font-black lg:hidden">Bolão do Botafla</span>
         </div>
         <div class="flex items-center gap-3">
           <div class="text-right hidden sm:block">
@@ -1457,7 +1457,11 @@ function showAppError(message) {
 }
 
 async function startLeague() {
-  $('league-title').textContent = currentLeague.name;
+  const leagueName = currentLeague.name;
+  $('league-title').textContent = leagueName;
+  if ($('sidebar-league-name')) $('sidebar-league-name').textContent = leagueName;
+  if ($('mobile-league-name')) $('mobile-league-name').textContent = leagueName;
+  document.title = `${leagueName} - Copa do Mundo 2026`;
   $('invite-code').textContent = currentLeague.invite_code;
   await ensureMatches();
   await loadData();
