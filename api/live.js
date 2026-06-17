@@ -129,8 +129,10 @@ export default async function handler(req, res) {
 
     const result = [];
 
-    // Statuses da ESPN que indicam partida encerrada
-    const ESPN_FINAL = new Set(['STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_END_PERIOD']);
+    // Statuses da ESPN que indicam partida definitivamente encerrada.
+    // STATUS_END_PERIOD NAO esta aqui: ocorre ao fim de cada periodo (90', 120') e
+    // pode ser seguido de prorrogacao ou penaltis — marcaria FINISHED prematuramente.
+    const ESPN_FINAL = new Set(['STATUS_FINAL', 'STATUS_FULL_TIME']);
 
     for (const m of active) {
       const fdScore = resolveScore(m);
@@ -230,25 +232,37 @@ async function supabasePatch(fdMatch, homeScore, awayScore) {
     return;
   }
 
-  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const home = norm(fdMatch.homeTeam?.name);
-  const away = norm(fdMatch.awayTeam?.name);
   const candidates = await candidatesRes.json();
-  const found = candidates.find(c => {
-    const ch = norm(c.home_team?.name);
-    const ca = norm(c.away_team?.name);
-    return (ch.includes(home) || home.includes(ch)) && (ca.includes(away) || away.includes(ca));
-  });
+
+  // Se so ha um candidato na janela de \u00b130 min, usa sem verificar nome
+  // (nomes PT x EN divergem ex: "Algeria" vs "Arg\u00e9lia" \u2192 normalizacao falha).
+  // Se houver mais de um, tenta por similaridade de nome.
+  let found;
+  if (candidates.length === 1) {
+    found = candidates[0];
+  } else {
+    const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const home = norm(fdMatch.homeTeam?.name);
+    const away = norm(fdMatch.awayTeam?.name);
+    found = candidates.find(c => {
+      const ch = norm(c.home_team?.name);
+      const ca = norm(c.away_team?.name);
+      return (ch.includes(home) || home.includes(ch)) && (ca.includes(away) || away.includes(ca));
+    });
+  }
+
   if (!found) {
     console.error(`[live] fallback nao encontrou match para ${fdMatch.homeTeam?.name} x ${fdMatch.awayTeam?.name} ${fdMatch.utcDate}`);
     return;
   }
 
-  const r2 = await fetch(`${SUPA_URL}?id=eq.${encodeURIComponent(found.id)}`, { method: 'PATCH', headers: hdr, body });
+  // Aproveita para gravar o match_number correto (FD ID) para lookups futuros
+  const bodyWithMatchNum = JSON.stringify({ status: 'FINISHED', home_score: homeScore, away_score: awayScore, match_number: fdMatch.id });
+  const r2 = await fetch(`${SUPA_URL}?id=eq.${encodeURIComponent(found.id)}`, { method: 'PATCH', headers: hdr, body: bodyWithMatchNum });
   if (!r2.ok) {
     console.error(`[live] patch fallback ${r2.status}: ${await r2.text()}`);
     return;
   }
 
-  console.log(`[live] supabase: fallback id ${found.id} FINISHED ${homeScore}-${awayScore}`);
+  console.log(`[live] supabase: fallback id ${found.id} FINISHED ${homeScore}-${awayScore} (match_number=${fdMatch.id} gravado)`);
 }

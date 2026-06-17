@@ -615,14 +615,9 @@ async function loadRanking() {
   const {data: members} = await db.from('league_members').select('user_id, role, profiles(*)').eq('league_id', currentLeague.id);
   ranking = (members || []).map(mbr => {
     const mine = predictions.filter(p => p.user_id === mbr.user_id);
-    const points = mine.reduce((s, p) => {
-      const match = matches.find(m => m.id === p.match_id);
-      if (match && isMatchFinishedForScoring(match) && match.home_score !== null && match.away_score !== null) {
-        // Recalcula somente depois do fim confirmado da partida.
-        return s + (calcLivePoints(p, match.home_score, match.away_score) ?? 0);
-      }
-      return s;
-    }, 0);
+    // Usa points_earned do banco (calculado pelo trigger apos FINISHED).
+    // Evita recalcular em memoria com placar que pode ser provisorio.
+    const points = mine.reduce((s, p) => s + (p.points_earned ?? 0), 0);
     return {
       user: mbr.profiles,
       role: mbr.role,
@@ -1150,13 +1145,15 @@ function isMatchWindowActive() {
 function startLivePoller() {
   clearInterval(window._livePoller);
   const tick = async () => {
-    if (!isMatchWindowActive()) return;
-    await pollLiveScores();
+    // loadData a cada 2 min independente de ter jogo ativo —
+    // garante que ranking e pontuacao refletem o banco mesmo apos todos os jogos encerrados.
     if (!window._lastSupabaseRefresh || Date.now() - window._lastSupabaseRefresh > 120000) {
       await loadData();
       window._lastSupabaseRefresh = Date.now();
       render();
     }
+    if (!isMatchWindowActive()) return;
+    await pollLiveScores();
   };
   window._livePoller = setInterval(tick, 15000);
 }
