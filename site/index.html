@@ -93,7 +93,7 @@
     <div class="flex h-16 items-center gap-3 border-b border-white/10 px-5">
       <img src="/logo/botafla.jpg" alt="Bolão do Botafla" class="h-10 w-10 rounded-xl object-cover">
       <div>
-        <p id="sidebar-league-name" class="font-black">Bolão do Botafla</p>
+        <p class="font-black">Bolão do Botafla</p>
         <p class="text-xs text-slate-500">Copa 2026</p>
       </div>
     </div>
@@ -103,7 +103,6 @@
       <button data-view="ranking" class="nav-btn w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-300 hover:bg-white/5"><i class="fa fa-trophy mr-3 w-4"></i>Ranking</button>
       <button data-view="rules" class="nav-btn w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-300 hover:bg-white/5"><i class="fa fa-book-open mr-3 w-4"></i>Regras</button>
       <button data-view="members" class="nav-btn w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-300 hover:bg-white/5"><i class="fa fa-users mr-3 w-4"></i>Membros</button>
-      <button onclick="showOnly('access-view')" class="w-full rounded-2xl px-4 py-3 text-left text-sm font-bold text-slate-500 hover:bg-white/5 hover:text-slate-300 mt-2 border-t border-white/5 pt-4"><i class="fa fa-right-left mr-3 w-4"></i>Trocar de liga</button>
     </nav>
   </aside>
 
@@ -113,7 +112,7 @@
       <div class="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
         <div class="flex items-center gap-3">
           <img src="/logo/botafla.jpg" alt="Bolão do Botafla" class="h-9 w-9 rounded-xl object-cover lg:hidden">
-          <span id="mobile-league-name" class="font-black lg:hidden">Bolão do Botafla</span>
+          <span class="font-black lg:hidden">Bolão do Botafla</span>
         </div>
         <div class="flex items-center gap-3">
           <div class="text-right hidden sm:block">
@@ -1458,11 +1457,7 @@ function showAppError(message) {
 }
 
 async function startLeague() {
-  const leagueName = currentLeague.name;
-  $('league-title').textContent = leagueName;
-  if ($('sidebar-league-name')) $('sidebar-league-name').textContent = leagueName;
-  if ($('mobile-league-name')) $('mobile-league-name').textContent = leagueName;
-  document.title = `${leagueName} - Copa do Mundo 2026`;
+  $('league-title').textContent = currentLeague.name;
   $('invite-code').textContent = currentLeague.invite_code;
   await ensureMatches();
   await loadData();
