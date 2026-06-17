@@ -71,7 +71,8 @@ async function fetchEspnLiveMap() {
         homeScore,
         awayScore,
         minute,
-        period: ev.status?.period ?? null,
+        period:     ev.status?.period ?? null,
+        espnStatus: ev.status?.type?.name || null,
       };
     }
 
@@ -128,40 +129,51 @@ export default async function handler(req, res) {
 
     const result = [];
 
-    for (const m of active) {
-      const fdScore   = resolveScore(m);   // placar final do FD (null durante a partida)
-      const fdTs      = new Date(m.utcDate).getTime();
-      const mappedStatus = m.status === 'FINISHED' ? 'FINISHED'
-                         : m.status === 'PAUSED'   ? 'PAUSED'
-                         : 'IN_PLAY';
+    // Statuses da ESPN que indicam partida encerrada
+    const ESPN_FINAL = new Set(['STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_END_PERIOD']);
 
-      // Busca placar ao vivo da ESPN para partidas em andamento
+    for (const m of active) {
+      const fdScore = resolveScore(m);
+      const fdTs    = new Date(m.utcDate).getTime();
+      let mappedStatus = m.status === 'FINISHED' ? 'FINISHED'
+                       : m.status === 'PAUSED'   ? 'PAUSED'
+                       : 'IN_PLAY';
+
+      // Busca dados da ESPN (placar + status) para a partida
       let espnData = null;
-      if (mappedStatus !== 'FINISHED') {
-        for (const [espnTs, data] of Object.entries(espnLiveMap)) {
-          if (Math.abs(fdTs - Number(espnTs)) < 90000) { // 90 s de tolerancia
-            espnData = data;
-            break;
-          }
+      for (const [espnTs, data] of Object.entries(espnLiveMap)) {
+        if (Math.abs(fdTs - Number(espnTs)) < 90000) {
+          espnData = data;
+          break;
         }
       }
+
+      // Se ESPN ja marcou como encerrado mas FD ainda nao atualizou, trata como FINISHED
+      if (mappedStatus !== 'FINISHED' && espnData && ESPN_FINAL.has(espnData.espnStatus)) {
+        mappedStatus = 'FINISHED';
+      }
+
+      // Placar: FD tem prioridade (placar oficial); fallback para ESPN
+      const effectiveScore = fdScore
+        ?? (mappedStatus === 'FINISHED' && espnData
+            ? { home: espnData.homeScore, away: espnData.awayScore }
+            : null);
 
       result.push({
         id:        m.id,
         utcDate:   m.utcDate,
         status:    mappedStatus,
-        minute:    espnData?.minute ?? m.minute ?? null,
-        period:    espnData?.period ?? null,
-        homeScore: fdScore?.home ?? espnData?.homeScore ?? null,
-        awayScore: fdScore?.away ?? espnData?.awayScore ?? null,
+        minute:    mappedStatus !== 'FINISHED' ? (espnData?.minute ?? m.minute ?? null) : null,
+        period:    mappedStatus !== 'FINISHED' ? (espnData?.period ?? null) : null,
+        homeScore: effectiveScore?.home ?? espnData?.homeScore ?? null,
+        awayScore: effectiveScore?.away ?? espnData?.awayScore ?? null,
         homeTeam:  m.homeTeam?.name,
         awayTeam:  m.awayTeam?.name,
       });
 
-      // FINISHED: aguarda gravacao no Supabase antes de responder ao cliente.
-      // Garante que loadData() depois desta resposta ja vera o status atualizado.
-      if (m.status === 'FINISHED' && fdScore && SERVICE_KEY) {
-        await supabasePatch(m, fdScore.home, fdScore.away).catch(e =>
+      // FINISHED: grava no Supabase para o trigger de pontos disparar
+      if (mappedStatus === 'FINISHED' && effectiveScore && SERVICE_KEY) {
+        await supabasePatch(m, effectiveScore.home, effectiveScore.away).catch(e =>
           console.error('[live] supabase patch falhou:', e.message)
         );
       }
