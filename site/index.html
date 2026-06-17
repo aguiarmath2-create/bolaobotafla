@@ -91,7 +91,7 @@
   <!-- Sidebar desktop -->
   <aside class="fixed inset-y-0 left-0 z-30 hidden w-60 border-r border-white/10 bg-[#0e1117] lg:block">
     <div class="flex h-16 items-center gap-3 border-b border-white/10 px-5">
-      <img src="/logo/botafla.jpg" alt="Bolão do Botafla" class="h-10 w-10 rounded-xl object-cover">
+      <img id="league-logo-sidebar" src="/logo/botafla.jpg" alt="" class="h-10 w-10 rounded-xl object-cover">
       <div>
         <p id="sidebar-league-name" class="font-black">Bolão do Botafla</p>
         <p class="text-xs text-slate-500">Copa 2026</p>
@@ -111,7 +111,7 @@
     <header class="sticky top-0 z-20 border-b border-white/10 bg-[#080b12]/90 backdrop-blur">
       <!-- Mobile header: logo | nome centralizado | sair -->
       <div class="relative flex min-h-14 items-center px-4 lg:hidden">
-        <img src="/logo/botafla.jpg" alt="" class="h-9 w-9 flex-shrink-0 rounded-xl object-cover">
+        <img id="league-logo-mobile" src="/logo/botafla.jpg" alt="" class="h-9 w-9 flex-shrink-0 rounded-xl object-cover">
         <span id="mobile-league-name" class="absolute left-0 right-0 text-center text-sm font-black pointer-events-none px-14 truncate">Bolão do Botafla</span>
         <button id="logout-btn" class="ml-auto flex-shrink-0 rounded-xl border border-white/10 px-4 py-2 text-sm font-bold hover:bg-white/5">Sair</button>
       </div>
@@ -151,7 +151,7 @@
       <section class="mb-5 overflow-hidden rounded-2xl border border-emerald-500/20 bg-gradient-to-r from-emerald-950 via-[#121914] to-[#171717] p-5 shadow-2xl">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div class="flex items-center gap-4 min-w-0">
-            <img src="/logo/botafla.jpg" alt="Bolão do Botafla" class="h-16 w-16 flex-shrink-0 rounded-2xl border-2 border-emerald-500/50 bg-black object-cover shadow-xl">
+            <img id="league-logo-banner" src="/logo/botafla.jpg" alt="" class="h-16 w-16 flex-shrink-0 rounded-2xl border-2 border-emerald-500/50 bg-black object-cover shadow-xl">
             <div class="min-w-0">
               <p class="text-xs font-black uppercase tracking-widest text-emerald-300">Copa do Mundo 2026</p>
               <h1 id="league-title" class="text-xl font-black truncate">Bolão do Botafla</h1>
@@ -389,6 +389,10 @@ const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_478hmk4Q097jRdrmB40hOQ_NUrEID3f
 const LEAGUE_CONFIGS = {
   '6f5670ef434b': 'e8a13f365fb6d8a993adfbc2156c702e5a3e877b43cb81a1d688911169a5c0d1', // BotaFla
   '2964427416ab': '029d3de15470169250765909b9ddfbabe5fcbe69838344b5787c07216c75fb77', // Cabeça de Gelo
+};
+const LEAGUE_LOGOS = {
+  '6f5670ef434b': '/logo/botafla.jpg',
+  '2964427416ab': '/logo/cabecadegelo.jpg',
 };
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
@@ -1459,9 +1463,13 @@ function showAppError(message) {
 
 async function startLeague() {
   const leagueName = currentLeague.name;
+  const leagueLogo = LEAGUE_LOGOS[currentLeague.invite_code] || '/logo/botafla.jpg';
   $('league-title').textContent = leagueName;
   if ($('sidebar-league-name')) $('sidebar-league-name').textContent = leagueName;
   if ($('mobile-league-name')) $('mobile-league-name').textContent = leagueName;
+  ['league-logo-sidebar','league-logo-mobile','league-logo-banner'].forEach(id => {
+    const el = $(id); if (el) el.src = leagueLogo;
+  });
   document.title = `${leagueName} - Copa do Mundo 2026`;
   $('invite-code').textContent = currentLeague.invite_code;
   await ensureMatches();
