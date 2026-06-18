@@ -32,6 +32,8 @@
     .live-dot { animation: liveDot 1.4s ease-in-out infinite; }
     @keyframes liveDot { 0%,100%{opacity:1} 50%{opacity:.3} }
     .live-ring { box-shadow: 0 0 0 1px rgba(239,68,68,.3); }
+    /* Prevent horizontal overflow on all pages */
+    #app-content { overflow-x: hidden; }
   </style>
 </head>
 <body class="min-h-screen bg-[#080b12] text-white">
@@ -173,7 +175,7 @@
       <div class="grid gap-5 xl:grid-cols-[1fr_360px]">
 
         <!-- Matches section -->
-        <section id="view-matches">
+        <section id="view-matches" class="min-w-0">
           <!-- Round nav + date tabs -->
           <div class="mb-3 rounded-2xl border border-white/10 bg-[#151515] p-3">
             <div class="flex items-center justify-between gap-3">
