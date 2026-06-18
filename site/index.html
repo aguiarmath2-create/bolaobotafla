@@ -955,12 +955,12 @@ function renderMatchCard(m) {
     centerBlock = `<span class="text-3xl font-black text-slate-600">×</span>`;
     centerClass = 'flex-shrink-0 flex items-center justify-center';
   } else {
-    const b = 'h-9 w-9 rounded-full bg-white/5 text-xl font-black hover:bg-white/10 flex items-center justify-center leading-none select-none';
-    centerBlock = `<div class="flex items-center gap-2">
+    const b = 'h-8 w-8 rounded-full bg-white/5 text-lg font-black hover:bg-white/10 flex items-center justify-center leading-none select-none';
+    centerBlock = `<div class="flex items-center gap-1">
       <button onclick="adjustPred(${m.id},'home',-1)" class="${b}">−</button>
       <span data-score="${m.id}-home" class="w-8 text-center text-2xl font-black tabular-nums">${ph!==null?ph:'−'}</span>
       <button onclick="adjustPred(${m.id},'home',1)" class="${b}">+</button>
-      <span class="text-slate-600 font-black mx-1">×</span>
+      <span class="text-slate-600 font-black mx-2">×</span>
       <button onclick="adjustPred(${m.id},'away',-1)" class="${b}">−</button>
       <span data-score="${m.id}-away" class="w-8 text-center text-2xl font-black tabular-nums">${pa!==null?pa:'−'}</span>
       <button onclick="adjustPred(${m.id},'away',1)" class="${b}">+</button>
@@ -1040,16 +1040,28 @@ function renderMatchCard(m) {
   // ── Article wrapper ───────────────────────────────────
   const articleCls = 'rounded-2xl border border-white/10 bg-[#161616] overflow-hidden';
 
+  // Open state: two-row layout so team names aren't squeezed by the input buttons
+  const bodySection = !isClosed
+    ? `<div class="flex items-center gap-3 px-3 pt-3 pb-1">
+        ${homeCol}
+        <span class="text-slate-600 font-black text-lg flex-shrink-0">×</span>
+        ${awayCol}
+      </div>
+      <div class="flex items-center justify-center pb-4 pt-1">
+        ${centerBlock}
+      </div>`
+    : `<div class="flex items-center gap-2 px-3 ${showScore?'pt-3 pb-5':'py-4'}">
+        ${homeCol}
+        <div class="${centerClass}">${centerBlock}</div>
+        ${awayCol}
+      </div>`;
+
   return `<article data-card="${m.id}" class="${articleCls}">
     <div class="flex items-center justify-between px-4 pt-3 pb-2">
       <span class="inline-flex items-center rounded-full ${statusClass} px-3 py-1 text-xs font-bold"${!isClosed?` data-closes="${m.prediction_closes_at}"`:''}>${statusLabel}</span>
       ${topRight}
     </div>
-    <div class="flex items-center gap-2 px-3 ${showScore?'pt-3 pb-5':'py-4'}">
-      ${homeCol}
-      <div class="${centerClass}">${centerBlock}</div>
-      ${awayCol}
-    </div>
+    ${bodySection}
     ${predBar}
     ${footer}
     <div id="who-${m.id}" class="hidden border-t border-white/10 px-4 py-3 text-xs text-slate-400"></div>
