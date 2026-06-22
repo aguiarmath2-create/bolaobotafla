@@ -135,19 +135,52 @@ async function supabasePatch(m, homeScore, awayScore) {
   }
 
   // Single candidate in window: use it without name matching (PT vs EN names diverge)
-  // Multiple candidates: try name similarity
+  // Multiple candidates: try name similarity with EN↔PT alias map
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  // FD API uses English names; DB may use Portuguese. Map both directions.
+  const ALIASES = {
+    'brazil': 'brasil', 'brasil': 'brazil',
+    'morocco': 'marrocos', 'marrocos': 'morocco',
+    'germany': 'alemanha', 'alemanha': 'germany',
+    'spain': 'espanha', 'espanha': 'spain',
+    'france': 'franca', 'franca': 'france',
+    'ivory coast': 'costa do marfim', 'costa do marfim': 'ivory coast',
+    'south korea': 'coreia do sul', 'coreia do sul': 'south korea',
+    'korea republic': 'coreia do sul', 'republic of korea': 'coreia do sul',
+    'saudi arabia': 'arabia saudita', 'arabia saudita': 'saudi arabia',
+    'cape verde': 'cabo verde', 'cabo verde': 'cape verde',
+    'congo dr': 'republica democratica do congo',
+    'dr congo': 'republica democratica do congo',
+    'new zealand': 'nova zelandia', 'nova zelandia': 'new zealand',
+    'czechia': 'republica tcheca', 'czech republic': 'republica tcheca',
+    'bosnia-h.': 'bosnia e herzegovina', 'bosnia and herzegovina': 'bosnia e herzegovina',
+    'bosnia': 'bosnia e herzegovina',
+    'switzerland': 'suica', 'suica': 'switzerland',
+    'netherlands': 'paises baixos', 'paises baixos': 'netherlands',
+    'uzbekistan': 'uzbequistao', 'uzbequistao': 'uzbekistan',
+    'england': 'inglaterra', 'inglaterra': 'england',
+    'scotland': 'escocia', 'escocia': 'scotland',
+    'portugal': 'portugal',
+  };
+
+  const nameMatches = (fdName, dbName) => {
+    const fd = norm(fdName);
+    const db = norm(dbName);
+    if (fd.includes(db) || db.includes(fd)) return true;
+    const alias = ALIASES[fd];
+    if (alias && (alias.includes(db) || db.includes(alias))) return true;
+    return false;
+  };
+
   let found;
   if (candidates.length === 1) {
     found = candidates[0];
   } else {
-    const home = norm(m.homeTeam?.name);
-    const away = norm(m.awayTeam?.name);
-    found = candidates.find(c => {
-      const ch = norm(c.home_team?.name);
-      const ca = norm(c.away_team?.name);
-      return (ch.includes(home) || home.includes(ch)) && (ca.includes(away) || away.includes(ca));
-    });
+    found = candidates.find(c =>
+      nameMatches(m.homeTeam?.name, c.home_team?.name) &&
+      nameMatches(m.awayTeam?.name, c.away_team?.name)
+    );
   }
 
   if (!found) {
