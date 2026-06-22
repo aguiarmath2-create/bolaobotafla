@@ -5,13 +5,9 @@
 const SUPABASE_URL = 'https://pmrbtugoyuwlgobovlzg.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const FD_KEY = process.env.FOOTBALL_DATA_API_KEY;
+const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/FIFA.WORLD/scoreboard';
 
 // Resolve current score from any populated field the API returns.
-// football-data.org free tier may keep score.fullTime null during IN_PLAY
-// and only populate it at FINISHED. Fallback order:
-//   1. score.fullTime  (populated for FINISHED; sometimes for IN_PLAY)
-//   2. score.regularTime (alternate field in some responses)
-//   3. count from goals[] array (most reliable for live)
 function resolveScore(m) {
   const ft = m.score?.fullTime;
   if (ft?.home !== null && ft?.home !== undefined && ft?.away !== null && ft?.away !== undefined) {
@@ -41,6 +37,50 @@ function resolveScore(m) {
   return null;
 }
 
+// Fetches ESPN scoreboard for ±1 days and returns a map: timestamp_ms -> { homeScore, awayScore }
+async function fetchEspnScores() {
+  try {
+    const results = await Promise.all(
+      [-1, 0, 1].map(d => {
+        const date = new Date(Date.now() + d * 86400000);
+        const s = date.toISOString().slice(0, 10).replace(/-/g, '');
+        return fetch(`${ESPN_BASE}?dates=${s}`)
+          .then(r => r.ok ? r.json() : { events: [] })
+          .catch(() => ({ events: [] }));
+      })
+    );
+
+    const map = {};
+    const allEvents = results.flatMap(r => r.events || []);
+    const seen = new Set();
+
+    for (const ev of allEvents) {
+      if (seen.has(ev.id)) continue;
+      seen.add(ev.id);
+
+      const comp = ev.competitions?.[0];
+      const home = comp?.competitors?.find(c => c.homeAway === 'home');
+      const away = comp?.competitors?.find(c => c.homeAway === 'away');
+      if (!home || !away) continue;
+
+      const homeScore = parseInt(home.score);
+      const awayScore = parseInt(away.score);
+      if (isNaN(homeScore) || isNaN(awayScore)) continue;
+
+      const espnStatus = ev.status?.type?.name || '';
+      // Only include matches that ESPN considers finished
+      if (!['STATUS_FINAL', 'STATUS_FULL_TIME'].includes(espnStatus)) continue;
+
+      const ts = new Date(ev.date).getTime();
+      map[ts] = { homeScore, awayScore };
+    }
+
+    return map;
+  } catch {
+    return {};
+  }
+}
+
 // Patches a match to FINISHED in Supabase.
 // Tries match_number first; falls back to timestamp ±30 min if 0 rows updated.
 // Also stores the FD match_number on the record so future syncs hit on first try.
@@ -53,7 +93,7 @@ async function supabasePatch(m, homeScore, awayScore) {
   };
   const body = JSON.stringify({ status: 'FINISHED', home_score: homeScore, away_score: awayScore });
 
-  // Attempt 1: match by FD match ID stored in match_number column
+  // Attempt 1: match by FD match ID stored in match_number column (no status filter)
   const r1 = await fetch(
     `${SUPABASE_URL}/rest/v1/matches?match_number=eq.${encodeURIComponent(m.id)}`,
     { method: 'PATCH', headers: hdr, body }
@@ -61,31 +101,37 @@ async function supabasePatch(m, homeScore, awayScore) {
   if (r1.ok) {
     const updated = await r1.json();
     if (updated.length > 0) {
-      console.log(`OK  ${m.homeTeam?.shortName} ${homeScore}-${awayScore} ${m.awayTeam?.shortName} [FINISHED via match_number]`);
-      return;
+      const row = updated[0];
+      const already = row.status === 'FINISHED' && row.home_score === homeScore && row.away_score === awayScore;
+      if (already) {
+        console.log(`SKIP ${m.homeTeam?.shortName} ${homeScore}-${awayScore} ${m.awayTeam?.shortName} [already correct in DB]`);
+      } else {
+        console.log(`OK   ${m.homeTeam?.shortName} ${homeScore}-${awayScore} ${m.awayTeam?.shortName} [via match_number]`);
+      }
+      return true;
     }
   } else {
-    console.error(`ERR patch match_number ${m.id}: ${r1.status} ${await r1.text()}`);
+    console.error(`ERR  patch match_number ${m.id}: ${r1.status} ${await r1.text()}`);
   }
 
-  // Attempt 2: find by timestamp ±30 min (covers import date format differences)
+  // Attempt 2: find by timestamp ±30 min (no status filter — handles re-sync of wrong scores too)
   const ts = new Date(m.utcDate).getTime();
   const lo = new Date(ts - 30 * 60000).toISOString();
   const hi = new Date(ts + 30 * 60000).toISOString();
   const candidatesRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/matches?select=id,scheduled_at,home_team:teams!matches_home_team_id_fkey(name),away_team:teams!matches_away_team_id_fkey(name)` +
-    `&scheduled_at=gte.${encodeURIComponent(lo)}&scheduled_at=lte.${encodeURIComponent(hi)}&status=neq.FINISHED`,
+    `${SUPABASE_URL}/rest/v1/matches?select=id,scheduled_at,status,home_score,away_score,home_team:teams!matches_home_team_id_fkey(name),away_team:teams!matches_away_team_id_fkey(name)` +
+    `&scheduled_at=gte.${encodeURIComponent(lo)}&scheduled_at=lte.${encodeURIComponent(hi)}`,
     { headers: hdr }
   );
   if (!candidatesRes.ok) {
-    console.error(`ERR fallback select for match ${m.id}: ${candidatesRes.status} ${await candidatesRes.text()}`);
-    return;
+    console.error(`ERR  fallback select for match ${m.id}: ${candidatesRes.status} ${await candidatesRes.text()}`);
+    return false;
   }
 
   const candidates = await candidatesRes.json();
   if (candidates.length === 0) {
-    console.warn(`SKIP ${m.homeTeam?.shortName} x ${m.awayTeam?.shortName} — not found in DB (match_number=${m.id}, utcDate=${m.utcDate})`);
-    return;
+    console.warn(`WARN ${m.homeTeam?.shortName} x ${m.awayTeam?.shortName} — not found in DB (match_number=${m.id}, utcDate=${m.utcDate})`);
+    return false;
   }
 
   // Single candidate in window: use it without name matching (PT vs EN names diverge)
@@ -105,8 +151,14 @@ async function supabasePatch(m, homeScore, awayScore) {
   }
 
   if (!found) {
-    console.error(`ERR fallback: no name match for ${m.homeTeam?.name} x ${m.awayTeam?.name} in ${candidates.length} candidates`);
-    return;
+    console.error(`ERR  fallback: no name match for ${m.homeTeam?.name} x ${m.awayTeam?.name} in ${candidates.length} candidate(s)`);
+    return false;
+  }
+
+  // Skip if already correct (avoid re-triggering DB trigger unnecessarily)
+  if (found.status === 'FINISHED' && found.home_score === homeScore && found.away_score === awayScore) {
+    console.log(`SKIP ${m.homeTeam?.shortName} ${homeScore}-${awayScore} ${m.awayTeam?.shortName} [already correct in DB via fallback]`);
+    return true;
   }
 
   // Store FD match_number so next sync uses the fast path
@@ -116,10 +168,11 @@ async function supabasePatch(m, homeScore, awayScore) {
     { method: 'PATCH', headers: hdr, body: bodyWithId }
   );
   if (!r2.ok) {
-    console.error(`ERR fallback patch id=${found.id}: ${r2.status} ${await r2.text()}`);
-    return;
+    console.error(`ERR  fallback patch id=${found.id}: ${r2.status} ${await r2.text()}`);
+    return false;
   }
-  console.log(`OK  ${m.homeTeam?.shortName} ${homeScore}-${awayScore} ${m.awayTeam?.shortName} [FINISHED via fallback, match_number=${m.id} stored]`);
+  console.log(`OK   ${m.homeTeam?.shortName} ${homeScore}-${awayScore} ${m.awayTeam?.shortName} [via fallback, match_number=${m.id} stored]`);
+  return true;
 }
 
 async function main() {
@@ -128,9 +181,12 @@ async function main() {
     process.exit(1);
   }
 
-  const fdRes = await fetch('https://api.football-data.org/v4/competitions/WC/matches', {
-    headers: { 'X-Auth-Token': FD_KEY },
-  });
+  const [fdRes, espnMap] = await Promise.all([
+    fetch('https://api.football-data.org/v4/competitions/WC/matches', {
+      headers: { 'X-Auth-Token': FD_KEY },
+    }),
+    fetchEspnScores(),
+  ]);
 
   if (!fdRes.ok) {
     console.error(`football-data.org ${fdRes.status}: ${await fdRes.text()}`);
@@ -139,24 +195,38 @@ async function main() {
 
   const { matches } = await fdRes.json();
   const finished = matches.filter(m => m.status === 'FINISHED');
-  console.log(`Finished matches from API: ${finished.length}`);
+  console.log(`Finished from football-data.org: ${finished.length} | ESPN confirmed finished: ${Object.keys(espnMap).length}`);
 
-  let updated = 0;
+  let ok = 0;
   let skipped = 0;
+  let failed = 0;
 
   for (const m of finished) {
-    const score = resolveScore(m);
+    let score = resolveScore(m);
+
+    // ESPN fallback: se football-data.org não retornou placar, tenta ESPN
+    if (!score) {
+      const fdTs = new Date(m.utcDate).getTime();
+      for (const [espnTs, espnData] of Object.entries(espnMap)) {
+        if (Math.abs(fdTs - Number(espnTs)) < 90000) {
+          score = { home: espnData.homeScore, away: espnData.awayScore, source: 'espn' };
+          break;
+        }
+      }
+    }
+
     if (!score) {
       console.warn(`SKIP ${m.homeTeam?.shortName} x ${m.awayTeam?.shortName} — no score available`);
       skipped++;
       continue;
     }
 
-    await supabasePatch(m, score.home, score.away);
-    updated++;
+    const success = await supabasePatch(m, score.home, score.away);
+    if (success) ok++; else failed++;
   }
 
-  console.log(`Done: ${updated} processed, ${skipped} skipped (no score)`);
+  console.log(`Done: ${ok} ok, ${skipped} skipped (no score), ${failed} failed`);
+  if (failed > 0) process.exit(1);
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

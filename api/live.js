@@ -30,6 +30,28 @@ function resolveScore(m) {
   return null;
 }
 
+// Para partidas FINISHED, busca placar do Supabase (fonte de verdade para correções manuais).
+// Retorna mapa: match_number -> { home, away }
+async function fetchSupabaseFinishedScores(matchNumbers) {
+  if (!SERVICE_KEY || matchNumbers.length === 0) return {};
+  try {
+    const hdr = { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
+    const r = await fetch(
+      `${SUPA_URL}?select=match_number,home_score,away_score&match_number=in.(${matchNumbers.join(',')})&status=eq.FINISHED`,
+      { headers: hdr }
+    );
+    if (!r.ok) return {};
+    const rows = await r.json();
+    const map = {};
+    for (const row of rows) {
+      if (row.match_number != null) map[row.match_number] = { home: row.home_score, away: row.away_score };
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
 // Busca placares ao vivo da ESPN para varios dias (sem autenticacao).
 // Retorna mapa: timestamp_ms -> { homeScore, awayScore, minute, period }
 async function fetchEspnLiveMap() {
@@ -105,6 +127,11 @@ export default async function handler(req, res) {
     const { matches: allMatches } = await fdRes.json();
     const active = (allMatches || []).filter(m => ACTIVE_STATUSES.has(m.status));
 
+    // Para partidas FINISHED, busca placares do Supabase (fonte de verdade).
+    // Isso permite que correções manuais no banco sejam refletidas na UI.
+    const finishedIds = active.filter(m => m.status === 'FINISHED').map(m => m.id);
+    const supaScores = await fetchSupabaseFinishedScores(finishedIds);
+
     // Debug: ?debug=1
     if (req.query?.debug === '1') {
       return res.status(200).json({
@@ -155,8 +182,11 @@ export default async function handler(req, res) {
         mappedStatus = 'FINISHED';
       }
 
-      // Placar: FD tem prioridade (placar oficial); fallback para ESPN
-      const effectiveScore = fdScore
+      // Placar: Supabase tem prioridade para FINISHED (permite correções manuais);
+      // para IN_PLAY/PAUSED usa FD com fallback para ESPN.
+      const supaScore = mappedStatus === 'FINISHED' ? supaScores[m.id] ?? null : null;
+      const effectiveScore = supaScore
+        ?? fdScore
         ?? (mappedStatus === 'FINISHED' && espnData
             ? { home: espnData.homeScore, away: espnData.awayScore }
             : null);
@@ -173,8 +203,8 @@ export default async function handler(req, res) {
         awayTeam:  m.awayTeam?.name,
       });
 
-      // FINISHED: grava no Supabase para o trigger de pontos disparar
-      if (mappedStatus === 'FINISHED' && effectiveScore && SERVICE_KEY) {
+      // FINISHED: grava no Supabase apenas se ainda não estava FINISHED (proteção já na query).
+      if (mappedStatus === 'FINISHED' && effectiveScore && SERVICE_KEY && !supaScore) {
         await supabasePatch(m, effectiveScore.home, effectiveScore.away).catch(e =>
           console.error('[live] supabase patch falhou:', e.message)
         );
@@ -205,9 +235,10 @@ async function supabasePatch(fdMatch, homeScore, awayScore) {
     Prefer:         'return=representation',
   };
 
-  // Tentativa 1: timestamp exato
+  // Tentativa 1: por match_number — só atualiza se ainda não está FINISHED
+  // (evita sobrescrever correções manuais com dados desatualizados da API)
   const r1 = await fetch(
-    `${SUPA_URL}?match_number=eq.${encodeURIComponent(fdMatch.id)}`,
+    `${SUPA_URL}?match_number=eq.${encodeURIComponent(fdMatch.id)}&status=neq.FINISHED`,
     { method: 'PATCH', headers: hdr, body }
   );
   if (r1.ok) {
