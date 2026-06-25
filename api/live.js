@@ -17,6 +17,38 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const ACTIVE_STATUSES = new Set(['IN_PLAY', 'PAUSED', 'FINISHED']);
 
+// Mapa de aliases PT↔EN para nomes de seleções. Usado em todos os name-matchings deste arquivo.
+const ALIASES = {
+  'brazil': 'brasil',          'brasil': 'brazil',
+  'morocco': 'marrocos',       'marrocos': 'morocco',
+  'germany': 'alemanha',       'alemanha': 'germany',
+  'spain': 'espanha',          'espanha': 'spain',
+  'france': 'franca',          'franca': 'france',
+  'scotland': 'escocia',       'escocia': 'scotland',
+  'england': 'inglaterra',     'inglaterra': 'england',
+  'netherlands': 'paises baixos', 'paises baixos': 'netherlands',
+  'switzerland': 'suica',      'suica': 'switzerland',
+  'ivory coast': 'costa do marfim', 'costa do marfim': 'ivory coast',
+  'south korea': 'coreia do sul', 'coreia do sul': 'south korea',
+  'korea republic': 'coreia do sul', 'republic of korea': 'coreia do sul',
+  'saudi arabia': 'arabia saudita', 'arabia saudita': 'saudi arabia',
+  'cape verde': 'cabo verde',  'cabo verde': 'cape verde',
+  'new zealand': 'nova zelandia', 'nova zelandia': 'new zealand',
+  'czechia': 'republica tcheca', 'czech republic': 'republica tcheca',
+  'uzbekistan': 'uzbequistao', 'uzbequistao': 'uzbekistan',
+};
+
+function normName(s) {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function namesMatch(a, b) {
+  const fa = normName(a), fb = normName(b);
+  if (fa.includes(fb) || fb.includes(fa)) return true;
+  const alias = ALIASES[fa];
+  return !!(alias && (alias.includes(fb) || fb.includes(alias)));
+}
+
 // Resolve placar final do football-data.org (so disponivel em FINISHED no plano gratuito).
 function resolveScore(m) {
   const ft = m.score?.fullTime;
@@ -53,7 +85,8 @@ async function fetchSupabaseFinishedScores(matchNumbers) {
 }
 
 // Busca placares ao vivo da ESPN para varios dias (sem autenticacao).
-// Retorna mapa: timestamp_ms -> { homeScore, awayScore, minute, period }
+// Retorna array de eventos com { ts, homeScore, awayScore, minute, period, espnStatus, homeTeam, awayTeam }.
+// Array (em vez de mapa por timestamp) para lidar corretamente com jogos simultâneos.
 async function fetchEspnLiveMap() {
   try {
     const results = await Promise.all(
@@ -66,7 +99,9 @@ async function fetchEspnLiveMap() {
       })
     );
 
-    const map = {};
+    // Array em vez de mapa: evita colisão quando dois jogos têm o mesmo horário de início
+    // (fase de grupos da Copa — os dois jogos do grupo sempre iniciam ao mesmo tempo).
+    const events = [];
     const allEvents = results.flatMap(r => r.events || []);
     const seen = new Set();
 
@@ -87,20 +122,22 @@ async function fetchEspnLiveMap() {
 
       const clock  = ev.status?.displayClock || '';
       const minute = parseInt(clock.split(':')[0]) || null;
-      const ts     = new Date(ev.date).getTime();
 
-      map[ts] = {
+      events.push({
+        ts:         new Date(ev.date).getTime(),
         homeScore,
         awayScore,
         minute,
         period:     ev.status?.period ?? null,
         espnStatus: ev.status?.type?.name || null,
-      };
+        homeTeam:   home.team?.displayName || home.team?.name || '',
+        awayTeam:   away.team?.displayName || away.team?.name || '',
+      });
     }
 
-    return map;
+    return events;
   } catch {
-    return {};
+    return [];
   }
 }
 
@@ -137,7 +174,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         fd_total:   allMatches?.length ?? 0,
         fd_active:  active.length,
-        espn_live:  Object.keys(espnLiveMap).length,
+        espn_live:  espnLiveMap.length,
         fd_matches: active.map(m => ({
           id:       m.id,
           utcDate:  m.utcDate,
@@ -147,9 +184,9 @@ export default async function handler(req, res) {
           awayTeam: m.awayTeam?.shortName,
           score:    m.score,
         })),
-        espn_matches: Object.entries(espnLiveMap).map(([ts, d]) => ({
-          utcDate: new Date(Number(ts)).toISOString(),
-          ...d,
+        espn_matches: espnLiveMap.map(e => ({
+          utcDate: new Date(e.ts).toISOString(),
+          ...e,
         })),
       });
     }
@@ -168,14 +205,15 @@ export default async function handler(req, res) {
                        : m.status === 'PAUSED'   ? 'PAUSED'
                        : 'IN_PLAY';
 
-      // Busca dados da ESPN (placar + status) para a partida
-      let espnData = null;
-      for (const [espnTs, data] of Object.entries(espnLiveMap)) {
-        if (Math.abs(fdTs - Number(espnTs)) < 90000) {
-          espnData = data;
-          break;
-        }
-      }
+      // Busca dados da ESPN para a partida.
+      // Quando dois jogos têm o mesmo horário (fase de grupos), desambigua pelo nome do time.
+      const espnCandidates = espnLiveMap.filter(e => Math.abs(fdTs - e.ts) < 90000);
+      let espnData = espnCandidates.length === 1
+        ? espnCandidates[0]
+        : (espnCandidates.find(e =>
+            namesMatch(m.homeTeam?.name, e.homeTeam) &&
+            namesMatch(m.awayTeam?.name, e.awayTeam)
+          ) ?? espnCandidates[0] ?? null);
 
       // Se ESPN ja marcou como encerrado mas FD ainda nao atualizou, trata como FINISHED
       if (mappedStatus !== 'FINISHED' && espnData && ESPN_FINAL.has(espnData.espnStatus)) {
@@ -211,7 +249,7 @@ export default async function handler(req, res) {
       }
     }
 
-    console.log(`[live] ${new Date().toISOString()} fd:${active.length} espn:${Object.keys(espnLiveMap).length}`);
+    console.log(`[live] ${new Date().toISOString()} fd:${active.length} espn:${espnLiveMap.length}`);
     result.forEach(r => {
       const s = r.homeScore !== null ? `${r.homeScore}-${r.awayScore}` : '?-?';
       console.log(`  ${r.homeTeam} ${s} ${r.awayTeam} [${r.status}${r.minute ? ' ' + r.minute + "'" : ''}]`);
@@ -265,21 +303,16 @@ async function supabasePatch(fdMatch, homeScore, awayScore) {
 
   const candidates = await candidatesRes.json();
 
-  // Se so ha um candidato na janela de \u00b130 min, usa sem verificar nome
-  // (nomes PT x EN divergem ex: "Algeria" vs "Arg\u00e9lia" \u2192 normalizacao falha).
-  // Se houver mais de um, tenta por similaridade de nome.
+  // Se s\u00f3 h\u00e1 um candidato na janela de \u00b130 min, usa sem verificar nome.
+  // Se houver mais de um (jogos simult\u00e2neos), desambigua com alias PT\u2194EN.
   let found;
   if (candidates.length === 1) {
     found = candidates[0];
   } else {
-    const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const home = norm(fdMatch.homeTeam?.name);
-    const away = norm(fdMatch.awayTeam?.name);
-    found = candidates.find(c => {
-      const ch = norm(c.home_team?.name);
-      const ca = norm(c.away_team?.name);
-      return (ch.includes(home) || home.includes(ch)) && (ca.includes(away) || away.includes(ca));
-    });
+    found = candidates.find(c =>
+      namesMatch(fdMatch.homeTeam?.name, c.home_team?.name) &&
+      namesMatch(fdMatch.awayTeam?.name, c.away_team?.name)
+    );
   }
 
   if (!found) {

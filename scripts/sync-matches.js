@@ -37,7 +37,8 @@ function resolveScore(m) {
   return null;
 }
 
-// Fetches ESPN scoreboard for ±1 days and returns a map: timestamp_ms -> { homeScore, awayScore }
+// Fetches ESPN scoreboard for ±1 days and returns an array of finished events with team names.
+// Array (em vez de mapa por timestamp) para lidar corretamente com jogos simultâneos.
 async function fetchEspnScores() {
   try {
     const results = await Promise.all(
@@ -50,7 +51,8 @@ async function fetchEspnScores() {
       })
     );
 
-    const map = {};
+    // Array em vez de mapa: evita colisão quando dois jogos têm o mesmo horário de início.
+    const events = [];
     const allEvents = results.flatMap(r => r.events || []);
     const seen = new Set();
 
@@ -71,13 +73,18 @@ async function fetchEspnScores() {
       // Only include matches that ESPN considers finished
       if (!['STATUS_FINAL', 'STATUS_FULL_TIME'].includes(espnStatus)) continue;
 
-      const ts = new Date(ev.date).getTime();
-      map[ts] = { homeScore, awayScore };
+      events.push({
+        ts:        new Date(ev.date).getTime(),
+        homeScore,
+        awayScore,
+        homeTeam:  home.team?.displayName || home.team?.name || '',
+        awayTeam:  away.team?.displayName || away.team?.name || '',
+      });
     }
 
-    return map;
+    return events;
   } catch {
-    return {};
+    return [];
   }
 }
 
@@ -228,7 +235,7 @@ async function main() {
 
   const { matches } = await fdRes.json();
   const finished = matches.filter(m => m.status === 'FINISHED');
-  console.log(`Finished from football-data.org: ${finished.length} | ESPN confirmed finished: ${Object.keys(espnMap).length}`);
+  console.log(`Finished from football-data.org: ${finished.length} | ESPN confirmed finished: ${espnMap.length}`);
 
   let ok = 0;
   let skipped = 0;
@@ -237,14 +244,19 @@ async function main() {
   for (const m of finished) {
     let score = resolveScore(m);
 
-    // ESPN fallback: se football-data.org não retornou placar, tenta ESPN
+    // ESPN fallback: se football-data.org não retornou placar, tenta ESPN.
+    // Quando dois jogos têm o mesmo horário, desambigua pelo nome do time.
     if (!score) {
       const fdTs = new Date(m.utcDate).getTime();
-      for (const [espnTs, espnData] of Object.entries(espnMap)) {
-        if (Math.abs(fdTs - Number(espnTs)) < 90000) {
-          score = { home: espnData.homeScore, away: espnData.awayScore, source: 'espn' };
-          break;
-        }
+      const candidates = espnMap.filter(e => Math.abs(fdTs - e.ts) < 90000);
+      const espnData = candidates.length === 1
+        ? candidates[0]
+        : (candidates.find(e =>
+            nameMatches(m.homeTeam?.name, e.homeTeam) &&
+            nameMatches(m.awayTeam?.name, e.awayTeam)
+          ) ?? candidates[0] ?? null);
+      if (espnData) {
+        score = { home: espnData.homeScore, away: espnData.awayScore, source: 'espn' };
       }
     }
 
