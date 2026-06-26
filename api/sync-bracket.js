@@ -1,11 +1,11 @@
 // Vercel Serverless Function — sincroniza times das fases eliminatórias.
 //
-// Fonte: football-data.org (mesma do import-all-matches.js).
-// Para cada jogo de mata-mata que a FD já tem times definidos, atualiza
-// home_team_id / away_team_id no Supabase.
-//
-// Seguro de chamar repetidamente — idempotente.
-// Chame via /api/sync-bracket (GET) a partir do painel admin.
+// Comportamento:
+//   - Para jogos FD com times reais: upserta times e atualiza registro no Supabase.
+//   - Para jogos FD com placeholders (Group X Winner, etc.): insere slot com "A definir"
+//     se ainda não existir, mantendo todos os slots do bracket visíveis.
+//   - Jogos já FINISHED não são alterados.
+//   - Seguro de chamar repetidamente — idempotente.
 
 const FD_URL  = 'https://api.football-data.org/v4/competitions/WC/matches';
 const SUPA    = 'https://pmrbtugoyuwlgobovlzg.supabase.co/rest/v1';
@@ -23,6 +23,14 @@ const STAGE_ROUND = {
   SEMI_FINALS:    'SEMI',
   THIRD_PLACE:    'THIRD',
   FINAL:          'FINAL',
+};
+
+const FD_STATUS = {
+  FINISHED:  'FINISHED',
+  IN_PLAY:   'LOCKED',
+  PAUSED:    'LOCKED',
+  TIMED:     'UPCOMING',
+  SCHEDULED: 'UPCOMING',
 };
 
 const PT_NAMES = {
@@ -67,10 +75,21 @@ const PT_NAMES = {
   'Bosnia-Herzegovina': 'Bósnia e Herzegovina',
   'Bosnia and Herzegovina': 'Bósnia e Herzegovina',
   'Uzbekistan': 'Uzbequistão',    'Argentina': 'Argentina',
-  'Portugal': 'Portugal',
+  'Portugal': 'Portugal',         'Jordan': 'Jordânia',
+  'Kosovo': 'Kosovo',
 };
 
 function ptName(n) { return n ? (PT_NAMES[n] || n) : null; }
+
+// Detecta nomes placeholder que a FD usa para times ainda não definidos.
+function isFdPlaceholder(name) {
+  if (!name) return true;
+  return /\b(winner|loser|2nd\s+place|3rd\s+place|third\s+place)\b/i.test(name) ||
+         /^group\s+[a-l]\b/i.test(name) ||
+         /^round\s+of\s+\d+\b/i.test(name) ||
+         /^quarterfinal\s+\d+\b/i.test(name) ||
+         /^semifinal\s+\d+\b/i.test(name);
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -87,7 +106,14 @@ export default async function handler(req, res) {
   };
 
   try {
-    // 1. Busca todos os jogos da Copa no football-data.org
+    // Busca league_id para poder inserir novos registros
+    const leagueRes = await fetch(`${SUPA}/leagues?select=id&limit=1`, { headers: hdr });
+    if (!leagueRes.ok) return res.status(502).json({ error: `Supabase leagues: ${leagueRes.status}` });
+    const leagues = await leagueRes.json();
+    if (!leagues.length) return res.status(500).json({ error: 'Nenhuma liga no banco.' });
+    const leagueId = leagues[0].id;
+
+    // Busca todos os jogos da Copa no football-data.org
     const fdRes = await fetch(FD_URL, { headers: { 'X-Auth-Token': FD_KEY } });
     if (!fdRes.ok) {
       const txt = await fdRes.text();
@@ -95,10 +121,10 @@ export default async function handler(req, res) {
     }
     const { matches: allFd } = await fdRes.json();
 
-    // 2. Filtra apenas fases eliminatórias
+    // Filtra apenas fases eliminatórias
     const fdKnockout = (allFd || []).filter(m => KNOCKOUT_STAGES.has(m.stage));
 
-    // 3. Carrega todos os jogos de mata-mata do Supabase de uma vez
+    // Carrega todos os jogos de mata-mata do Supabase
     const supaRes = await fetch(
       `${SUPA}/matches?round=not.eq.GROUP&select=id,match_number,round,scheduled_at,home_team_id,away_team_id,status`,
       { headers: hdr }
@@ -109,82 +135,112 @@ export default async function handler(req, res) {
     const supaMatches = await supaRes.json();
 
     const log = [];
-    let updated = 0;
-    let skipped = 0;
+    let updated = 0, inserted = 0, skipped = 0;
 
     for (const fd of fdKnockout) {
       const round   = STAGE_ROUND[fd.stage];
       const fdTs    = new Date(fd.utcDate).getTime();
-      const homePt  = ptName(fd.homeTeam?.name);
-      const awayPt  = ptName(fd.awayTeam?.name);
-      const homeReal = !!homePt;
-      const awayReal = !!awayPt;
+      const homeRaw = fd.homeTeam?.name;
+      const awayRaw = fd.awayTeam?.name;
+      const homePt  = isFdPlaceholder(homeRaw) ? null : ptName(homeRaw);
+      const awayPt  = isFdPlaceholder(awayRaw) ? null : ptName(awayRaw);
 
-      // Pula se nenhum time está definido ainda
-      if (!homeReal && !awayReal) {
-        skipped++;
-        continue;
-      }
-
-      // Encontra jogo no Supabase:
-      // 1º por match_number (FD ID, mais confiável após o import inicial)
-      // 2º por round + janela de 60 min (cobre diferenças de fuso do seed)
+      // Busca no Supabase: match_number primeiro
       let supa = supaMatches.find(m => fd.id && String(m.match_number) === String(fd.id));
       if (!supa) {
-        const candidates = supaMatches.filter(m =>
+        const cands = supaMatches.filter(m =>
           m.round === round &&
           Math.abs(new Date(m.scheduled_at).getTime() - fdTs) < 60 * 60 * 1000
         );
-        // Se houver múltiplos candidatos (duplicatas), prefere o que já tem match_number da FD
-        supa = candidates.find(m => m.match_number && m.match_number > 1000)
-          ?? (candidates.length > 0 ? candidates[0] : null);
+        supa = cands.find(m => m.match_number && m.match_number > 1000)
+          ?? (cands.length > 0 ? cands[0] : null);
       }
 
-      if (!supa) {
-        log.push(`⚠ Sem jogo no banco para FD#${fd.id} (${homePt || '?'} × ${awayPt || '?'}, ${round}, ${fd.utcDate})`);
-        continue;
-      }
+      if (supa) {
+        if (supa.status === 'FINISHED') {
+          log.push(`— Finalizado, sem alteração: ${homePt || 'TBD'} × ${awayPt || 'TBD'}`);
+          skipped++;
+          continue;
+        }
 
-      // Não altera jogos já finalizados
-      if (supa.status === 'FINISHED') {
-        log.push(`— Finalizado, sem alteração: ${homePt || '?'} × ${awayPt || '?'} (id=${supa.id})`);
-        continue;
-      }
+        // Sem mudança real: ambos placeholder e banco já reflete isso
+        if (!homePt && !awayPt && !supa.home_team_id && !supa.away_team_id) {
+          skipped++;
+          continue;
+        }
 
-      // Upserta times reais no banco
-      const homeId = homeReal ? await upsertTeam(homePt, fd.homeTeam?.crest, hdr) : null;
-      const awayId = awayReal ? await upsertTeam(awayPt, fd.awayTeam?.crest, hdr) : null;
+        const homeId = homePt ? await upsertTeam(homePt, fd.homeTeam?.crest, hdr) : null;
+        const awayId = awayPt ? await upsertTeam(awayPt, fd.awayTeam?.crest, hdr) : null;
 
-      const patch = {
-        match_number:      fd.id,
-        home_team_id:      homeId,
-        away_team_id:      awayId,
-        home_placeholder:  homeId ? null : 'A definir',
-        away_placeholder:  awayId ? null : 'A definir',
-      };
+        const patch = {
+          match_number:      fd.id,
+          home_team_id:      homeId,
+          away_team_id:      awayId,
+          home_placeholder:  homeId ? null : 'A definir',
+          away_placeholder:  awayId ? null : 'A definir',
+        };
 
-      const pr = await fetch(`${SUPA}/matches?id=eq.${supa.id}`, {
-        method:  'PATCH',
-        headers: { ...hdr, Prefer: 'return=minimal' },
-        body:    JSON.stringify(patch),
-      });
+        const pr = await fetch(`${SUPA}/matches?id=eq.${supa.id}`, {
+          method:  'PATCH',
+          headers: { ...hdr, Prefer: 'return=minimal' },
+          body:    JSON.stringify(patch),
+        });
 
-      if (pr.ok) {
-        updated++;
-        log.push(`✓ ${homePt || 'TBD'} × ${awayPt || 'TBD'} (${round}, id=${supa.id})`);
-        // Sincroniza a cópia local para evitar reencontrar o mesmo registro
-        supa.match_number  = fd.id;
-        supa.home_team_id  = homeId;
-        supa.away_team_id  = awayId;
+        if (pr.ok) {
+          updated++;
+          log.push(`✓ ${homePt || 'TBD'} × ${awayPt || 'TBD'} (${round}, id=${supa.id})`);
+          supa.match_number  = fd.id;
+          supa.home_team_id  = homeId;
+          supa.away_team_id  = awayId;
+        } else {
+          const errTxt = await pr.text();
+          log.push(`✗ Erro ao atualizar id=${supa.id}: ${errTxt}`);
+        }
+
       } else {
-        const errTxt = await pr.text();
-        log.push(`✗ Erro ao atualizar id=${supa.id}: ${errTxt}`);
+        // Sem registro no Supabase — cria o slot do bracket
+        const homeId = homePt ? await upsertTeam(homePt, fd.homeTeam?.crest, hdr) : null;
+        const awayId = awayPt ? await upsertTeam(awayPt, fd.awayTeam?.crest, hdr) : null;
+        const kickoff = new Date(fd.utcDate);
+        const closes  = new Date(kickoff.getTime() - 60 * 60 * 1000).toISOString();
+        const status  = FD_STATUS[fd.status] || 'UPCOMING';
+
+        const newMatch = {
+          league_id:            leagueId,
+          match_number:         fd.id,
+          home_team_id:         homeId,
+          away_team_id:         awayId,
+          home_placeholder:     homeId ? null : 'A definir',
+          away_placeholder:     awayId ? null : 'A definir',
+          scheduled_at:         fd.utcDate,
+          round,
+          status,
+          prediction_opens_at:  new Date().toISOString(),
+          prediction_closes_at: closes,
+        };
+
+        const ins = await fetch(`${SUPA}/matches`, {
+          method:  'POST',
+          headers: { ...hdr, Prefer: 'return=representation' },
+          body:    JSON.stringify(newMatch),
+        });
+
+        if (ins.ok) {
+          const created = await ins.json();
+          supaMatches.push({ ...newMatch, id: created[0]?.id });
+          inserted++;
+          log.push(`+ inserido: ${homePt || 'A definir'} × ${awayPt || 'A definir'} (${round}, FD#${fd.id})`);
+        } else {
+          const errTxt = await ins.text();
+          log.push(`✗ Erro ao inserir FD#${fd.id}: ${errTxt}`);
+        }
       }
     }
 
-    console.log(`[sync-bracket] fd_knockout=${fdKnockout.length} updated=${updated} skipped=${skipped}`);
+    console.log(`[sync-bracket] fd_knockout=${fdKnockout.length} updated=${updated} inserted=${inserted} skipped=${skipped}`);
     return res.status(200).json({
       updated,
+      inserted,
       skipped,
       fd_knockout: fdKnockout.length,
       log,
@@ -199,7 +255,6 @@ export default async function handler(req, res) {
 async function upsertTeam(name, flagUrl, hdr) {
   if (!name) return null;
 
-  // Tenta buscar pelo nome exato (case-insensitive)
   const r = await fetch(
     `${SUPA}/teams?name=ilike.${encodeURIComponent(name)}&select=id&limit=1`,
     { headers: hdr }
@@ -207,7 +262,6 @@ async function upsertTeam(name, flagUrl, hdr) {
   if (r.ok) {
     const rows = await r.json();
     if (rows.length > 0) {
-      // Atualiza a bandeira se foi fornecida
       if (flagUrl) {
         await fetch(`${SUPA}/teams?id=eq.${rows[0].id}`, {
           method:  'PATCH',
@@ -219,7 +273,6 @@ async function upsertTeam(name, flagUrl, hdr) {
     }
   }
 
-  // Cria o time se não existir
   const ins = await fetch(`${SUPA}/teams`, {
     method:  'POST',
     headers: { ...hdr, Prefer: 'return=representation' },

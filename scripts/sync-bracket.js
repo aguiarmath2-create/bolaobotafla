@@ -1,6 +1,12 @@
 // Sincroniza times das fases eliminatórias via football-data.org.
 // Roda periodicamente pelo GitHub Actions (ver .github/workflows/sync-bracket.yml).
 //
+// Comportamento:
+//   - Para jogos FD com times reais: upserta times e atualiza o registro no Supabase.
+//   - Para jogos FD com placeholders (Group X Winner, etc.): insere "A definir" caso
+//     o registro ainda não exista no Supabase, para manter todos os slots do bracket.
+//   - Jogos já FINISHED não são alterados.
+//
 // Usage:
 //   SUPABASE_SERVICE_ROLE_KEY=xxx FOOTBALL_DATA_API_KEY=xxx node scripts/sync-bracket.js
 
@@ -20,6 +26,14 @@ const STAGE_ROUND = {
   THIRD_PLACE:    'THIRD',
   FINAL:          'FINAL',
 };
+const FD_STATUS = {
+  FINISHED:  'FINISHED',
+  IN_PLAY:   'LOCKED',
+  PAUSED:    'LOCKED',
+  TIMED:     'UPCOMING',
+  SCHEDULED: 'UPCOMING',
+};
+
 const PT_NAMES = {
   'Brazil': 'Brasil',             'Morocco': 'Marrocos',
   'Scotland': 'Escócia',          'United States': 'Estados Unidos',
@@ -62,10 +76,21 @@ const PT_NAMES = {
   'Bosnia-Herzegovina': 'Bósnia e Herzegovina',
   'Bosnia and Herzegovina': 'Bósnia e Herzegovina',
   'Uzbekistan': 'Uzbequistão',    'Argentina': 'Argentina',
-  'Portugal': 'Portugal',
+  'Portugal': 'Portugal',         'Jordan': 'Jordânia',
+  'Kosovo': 'Kosovo',             'Panama': 'Panamá',
 };
 
 function ptName(n) { return n ? (PT_NAMES[n] || n) : null; }
+
+// Detecta nomes placeholder que a FD usa para times ainda não definidos.
+function isFdPlaceholder(name) {
+  if (!name) return true;
+  return /\b(winner|loser|2nd\s+place|3rd\s+place|third\s+place)\b/i.test(name) ||
+         /^group\s+[a-l]\b/i.test(name) ||
+         /^round\s+of\s+\d+\b/i.test(name) ||
+         /^quarterfinal\s+\d+\b/i.test(name) ||
+         /^semifinal\s+\d+\b/i.test(name);
+}
 
 async function fetchJSON(url, headers) {
   const r = await fetch(url, { headers });
@@ -111,7 +136,12 @@ async function main() {
     'Content-Type': 'application/json',
   };
 
-  console.log(`[sync-bracket] ${new Date().toISOString()} — buscando FD...`);
+  // Busca league_id para poder inserir novos registros
+  const leagues = await fetchJSON(`${SUPA_REST}/leagues?select=id&limit=1`, hdr);
+  if (!leagues.length) throw new Error('Nenhuma liga encontrada no banco.');
+  const leagueId = leagues[0].id;
+
+  console.log(`[sync-bracket] ${new Date().toISOString()} — liga=${leagueId} — buscando FD...`);
   const { matches: allFd } = await fetchJSON(
     'https://api.football-data.org/v4/competitions/WC/matches',
     { 'X-Auth-Token': FD_KEY }
@@ -127,15 +157,15 @@ async function main() {
   );
   console.log(`[sync-bracket] Supabase knockout: ${supaMatches.length} jogos`);
 
-  let updated = 0, skipped = 0;
+  let updated = 0, inserted = 0, skipped = 0;
 
   for (const fd of fdKnockout) {
-    const round  = STAGE_ROUND[fd.stage];
-    const fdTs   = new Date(fd.utcDate).getTime();
-    const homePt = ptName(fd.homeTeam?.name);
-    const awayPt = ptName(fd.awayTeam?.name);
-
-    if (!homePt && !awayPt) { skipped++; continue; }
+    const round   = STAGE_ROUND[fd.stage];
+    const fdTs    = new Date(fd.utcDate).getTime();
+    const homeRaw = fd.homeTeam?.name;
+    const awayRaw = fd.awayTeam?.name;
+    const homePt  = isFdPlaceholder(homeRaw) ? null : ptName(homeRaw);
+    const awayPt  = isFdPlaceholder(awayRaw) ? null : ptName(awayRaw);
 
     // Busca no Supabase: match_number primeiro (mais confiável)
     let supa = supaMatches.find(m => fd.id && String(m.match_number) === String(fd.id));
@@ -146,43 +176,87 @@ async function main() {
         m.round === round &&
         Math.abs(new Date(m.scheduled_at).getTime() - fdTs) < 60 * 60 * 1000
       );
-      // Se houver múltiplos candidatos, prefere o que já tem match_number definido
       supa = cands.find(m => m.match_number && m.match_number > 1000) ?? cands[0] ?? null;
     }
 
-    if (!supa) {
-      console.log(`  ⚠ Sem jogo: FD#${fd.id} ${homePt || '?'} × ${awayPt || '?'} (${round}, ${fd.utcDate})`);
-      continue;
-    }
-    if (supa.status === 'FINISHED') continue;
+    if (supa) {
+      if (supa.status === 'FINISHED') { skipped++; continue; }
 
-    const homeId = homePt ? await upsertTeam(homePt, fd.homeTeam?.crest, hdr) : null;
-    const awayId = awayPt ? await upsertTeam(awayPt, fd.awayTeam?.crest, hdr) : null;
+      // Se ambos os times ainda são placeholder e o banco já reflete isso (sem team_id),
+      // não há nada a atualizar — evita chamadas desnecessárias à API.
+      if (!homePt && !awayPt && !supa.home_team_id && !supa.away_team_id) {
+        skipped++;
+        continue;
+      }
 
-    const patch = {
-      match_number:     fd.id,
-      home_team_id:     homeId,
-      away_team_id:     awayId,
-      home_placeholder: homeId ? null : 'A definir',
-      away_placeholder: awayId ? null : 'A definir',
-    };
+      const homeId = homePt ? await upsertTeam(homePt, fd.homeTeam?.crest, hdr) : null;
+      const awayId = awayPt ? await upsertTeam(awayPt, fd.awayTeam?.crest, hdr) : null;
 
-    const pr = await fetch(`${SUPA_REST}/matches?id=eq.${supa.id}`, {
-      method:  'PATCH',
-      headers: { ...hdr, Prefer: 'return=minimal' },
-      body:    JSON.stringify(patch),
-    });
+      const patch = {
+        match_number:     fd.id,
+        home_team_id:     homeId,
+        away_team_id:     awayId,
+        home_placeholder: homeId ? null : 'A definir',
+        away_placeholder: awayId ? null : 'A definir',
+      };
 
-    if (pr.ok) {
-      updated++;
-      supa.match_number = fd.id; // evita pegar o mesmo registro duas vezes
-      console.log(`  ✓ ${round}: ${homePt || 'TBD'} × ${awayPt || 'TBD'} (id=${supa.id})`);
+      const pr = await fetch(`${SUPA_REST}/matches?id=eq.${supa.id}`, {
+        method:  'PATCH',
+        headers: { ...hdr, Prefer: 'return=minimal' },
+        body:    JSON.stringify(patch),
+      });
+
+      if (pr.ok) {
+        updated++;
+        supa.match_number = fd.id;
+        supa.home_team_id = homeId;
+        supa.away_team_id = awayId;
+        console.log(`  ✓ atualizado: ${round} ${homePt || 'TBD'} × ${awayPt || 'TBD'} (id=${supa.id})`);
+      } else {
+        console.error(`  ✗ Erro patch id=${supa.id}: ${await pr.text()}`);
+      }
+
     } else {
-      console.error(`  ✗ Erro patch id=${supa.id}: ${await pr.text()}`);
+      // Sem registro no Supabase — cria o slot do bracket
+      const homeId = homePt ? await upsertTeam(homePt, fd.homeTeam?.crest, hdr) : null;
+      const awayId = awayPt ? await upsertTeam(awayPt, fd.awayTeam?.crest, hdr) : null;
+      const kickoff = new Date(fd.utcDate);
+      const closes  = new Date(kickoff.getTime() - 60 * 60 * 1000).toISOString();
+      const status  = FD_STATUS[fd.status] || 'UPCOMING';
+
+      const newMatch = {
+        league_id:            leagueId,
+        match_number:         fd.id,
+        home_team_id:         homeId,
+        away_team_id:         awayId,
+        home_placeholder:     homeId ? null : 'A definir',
+        away_placeholder:     awayId ? null : 'A definir',
+        scheduled_at:         fd.utcDate,
+        round,
+        status,
+        prediction_opens_at:  new Date().toISOString(),
+        prediction_closes_at: closes,
+      };
+
+      const ins = await fetch(`${SUPA_REST}/matches`, {
+        method:  'POST',
+        headers: { ...hdr, Prefer: 'return=representation' },
+        body:    JSON.stringify(newMatch),
+      });
+
+      if (ins.ok) {
+        const created = await ins.json();
+        // Adiciona ao array local para evitar inserir duplicata na mesma execução
+        supaMatches.push({ ...newMatch, id: created[0]?.id });
+        inserted++;
+        console.log(`  + inserido:  ${round} ${homePt || 'A definir'} × ${awayPt || 'A definir'} (FD#${fd.id})`);
+      } else {
+        console.error(`  ✗ Erro insert FD#${fd.id}: ${await ins.text()}`);
+      }
     }
   }
 
-  console.log(`[sync-bracket] Concluído: ${updated} atualizado(s), ${skipped} sem times ainda.`);
+  console.log(`[sync-bracket] Concluído: ${updated} atualizado(s), ${inserted} inserido(s), ${skipped} sem mudança.`);
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

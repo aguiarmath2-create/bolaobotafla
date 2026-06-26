@@ -156,6 +156,17 @@ function ptName(name) {
   return PT_NAMES[name] || name;
 }
 
+// Nomes que a FD usa para times ainda não definidos no mata-mata.
+// Esses não são países reais — evitamos criar registros fantasmas no banco.
+function isFdPlaceholder(name) {
+  if (!name) return false;
+  return /\b(winner|loser|2nd\s+place|3rd\s+place|third\s+place)\b/i.test(name) ||
+         /^group\s+[a-l]\b/i.test(name) ||
+         /^round\s+of\s+\d+\b/i.test(name) ||
+         /^quarterfinal\s+\d+\b/i.test(name) ||
+         /^semifinal\s+\d+\b/i.test(name);
+}
+
 async function fetchJSON(url, headers) {
   const res = await fetch(url, { headers });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
@@ -191,10 +202,15 @@ async function main() {
   let skipped = 0;
 
   for (const m of matches) {
-    const homeName = ptName(m.homeTeam?.name);
-    const awayName = ptName(m.awayTeam?.name);
+    const rawHome = m.homeTeam?.name;
+    const rawAway = m.awayTeam?.name;
 
-    // Pula partidas sem time mandante definido (mata-mata sem classificados)
+    // Trata nomes placeholder da FD ("Group C Winner", "Round of 32 1 Winner", etc.)
+    // como ausentes — evita criar times fantasmas no banco.
+    const homeName = (!rawHome || isFdPlaceholder(rawHome)) ? null : ptName(rawHome);
+    const awayName = (!rawAway || isFdPlaceholder(rawAway)) ? null : ptName(rawAway);
+
+    // Pula se mandante ainda não definido (fase de grupos sem placeholder também cai aqui)
     if (!homeName) { skipped++; continue; }
 
     const status = STATUS_MAP[m.status] || 'UPCOMING';
