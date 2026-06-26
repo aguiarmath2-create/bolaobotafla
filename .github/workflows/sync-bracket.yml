@@ -1,0 +1,27 @@
+name: Sync Bracket Teams
+
+on:
+  # Roda a cada 2 horas durante a janela de jogos da Copa do Mundo 2026.
+  # Preenche automaticamente os times classificados para cada fase eliminatória.
+  # Janela UTC 12-02 cobre desde o meio-dia até a madrugada (todos os jogos).
+  schedule:
+    - cron: '0 12-23 * * *'
+    - cron: '0 0-2 * * *'
+  # Disparo manual pela aba Actions do GitHub
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Sync bracket teams
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+        run: node scripts/sync-bracket.js

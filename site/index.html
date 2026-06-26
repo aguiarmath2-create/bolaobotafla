@@ -1544,7 +1544,7 @@ function switchCopaTab(tab) {
     btn.className = `copa-tab rounded-xl px-4 py-2 text-sm font-bold ${on ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:bg-white/5'}`;
   });
   if (tab === 'grupos') renderStandingsModal();
-  else renderBracket();
+  else { syncBracket(); renderBracket(); }
 }
 
 function computeStandings() {
@@ -1716,6 +1716,27 @@ function renderBracket() {
       </div>
       <div style="display:flex;flex:1;gap:8px;align-items:stretch;flex-direction:row-reverse">${rightCols}</div>
     </div>`;
+}
+
+// ── Bracket sync automático ───────────────────────────
+// Chamado ao abrir a aba Mata-mata. Debounce de 5 min para não
+// chamar football-data.org a cada clique do usuário.
+let _lastBracketSync = 0;
+async function syncBracket() {
+  const now = Date.now();
+  if (now - _lastBracketSync < 5 * 60 * 1000) return; // intervalo mínimo 5 min
+  _lastBracketSync = now;
+  try {
+    const r = await fetch('/api/sync-bracket');
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.updated > 0) {
+      await loadData();
+      render();
+      renderBracket();
+    }
+    console.log(`[sync-bracket] updated=${data.updated}/${data.fd_knockout}`);
+  } catch (_) { /* falha silenciosa — o bracket já está certo no banco */ }
 }
 
 // ── Events ────────────────────────────────────────────
